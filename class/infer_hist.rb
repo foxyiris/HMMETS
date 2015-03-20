@@ -24,7 +24,7 @@ class InferHist
     @tm_samp     = Array.new(input_genes.size).map{
                      Array.new(@N).map{
                        Array.new(3).map{
-                         Array.new(3)
+                         Array.new(3, log(0))
                        }
                      }
                    }
@@ -535,9 +535,11 @@ class InferHist
     # memo for me-> Ruby assings same reference with such declarations:
     #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
     #   Confirm not to declare with above style in ruby when using multi-D array.
-    log_prob_from_leaves = Array.new(@N).map{ Array.new(2).map{ Array.new(3, 0) }}
-    log_prob_near_leaves = Array.new(@N).map{ Array.new(3,0) }
-    log_prob             = Array.new(@N).map{ Array.new(3,0) }
+    log_prob_from_leaves     = Array.new(@N).map{ Array.new(2).map{ Array.new(3, 0) }}
+    log_prob_near_leaves     = Array.new(@N).map{ Array.new(3,0) }
+    log_prob                 = Array.new(@N).map{ Array.new(3,0) }
+    log_backward             = Array.new(@N).map{ Array.new(3,0) }
+    log_backward_from_parent = Array.new(@N).map{ Array.new(3,0) }
 
     #sg    = 0.0072 # signal gain, global
     #sg    = 0.0830 # signal gain, mts annotated
@@ -564,8 +566,7 @@ class InferHist
       t_mat = t_m
     else
       # estimate branch specific parameter
-      (0..@pt.n_s-1).each{ |num|
-        node  = @pt.sorted_nodes[num]
+      @pt.sorted_nodes.each_with_index { |node, num|
         if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
           next
         elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
@@ -576,12 +577,13 @@ class InferHist
 
             count[@hidden_samp[i][anc_index]][@hidden_samp[i][num]] += 1
 
-            @tm_samp[i][num][1][0] = (@a+count[1][0])/(@a+@b+count[1][0]+count[1][1]) #beta dist
-            @tm_samp[i][num][1][1] = 1 - @tm_samp[i][num][1][0]
-            @tm_samp[i][num][1][2] = 0
-            @tm_samp[i][num][2][0] = 0
-            @tm_samp[i][num][2][1] = 0
-            @tm_samp[i][num][2][2] = 0
+            @tm_samp[i][num][0][0] = 0
+            @tm_samp[i][num][1][0] = log((@a+count[1][0])/(@a+@b+count[1][0]+count[1][1])) #beta dist
+            @tm_samp[i][num][1][1] = log(1 - @tm_samp[i][num][1][0])
+            @tm_samp[i][num][1][2] = log(0)
+            @tm_samp[i][num][2][0] = log(0)
+            @tm_samp[i][num][2][1] = log(0)
+            @tm_samp[i][num][2][2] = log(0)
 
           else
             # mts region
@@ -590,63 +592,171 @@ class InferHist
 
             count[@hidden_samp[i][anc_index]][@hidden_samp[i][num]] += 1
 
-            @tm_samp[i][num][1][0] = (@a+count[1][0])/(@a+@b+count[1][0]+count[1][1]) #beta dist
-            @tm_samp[i][num][1][1] = 1 - @tm_samp[i][num][1][0]
-            @tm_samp[i][num][1][2] = 0
-            @tm_samp[i][num][2][0] = (@al1+count[2][0])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]) #gamma dist
-            @tm_samp[i][num][2][1] = (@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2])
-            @tm_samp[i][num][2][2] = 1 - @tm_samp[i][num][2][0] - @tm_samp[i][num][2][1]
+            @tm_samp[i][num][0][0] = 0
+            @tm_samp[i][num][1][0] = log((@a+count[1][0])/(@a+@b+count[1][0]+count[1][1])) #beta dist
+            @tm_samp[i][num][1][1] = log(1 - @tm_samp[i][num][1][0])
+            @tm_samp[i][num][1][2] = log(0)
+            @tm_samp[i][num][2][0] = log((@al1+count[2][0])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2])) #gamma dist
+            @tm_samp[i][num][2][1] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
+            @tm_samp[i][num][2][2] = log(1 - @tm_samp[i][num][2][0] - @tm_samp[i][num][2][1])
           end
         end
       end # end of each
 
-    end
+    end # end of if
 
     # quantitate fluctuation of observed states by pre-calculated performance.
     (0..@pt.n_s-1).each{ |num|
 
       node  = @pt.sorted_nodes[num]
-      state = @pp.profiles[@pp.symbol2index[g]][num] > 0 ? 1 : 0
-
-      if n != node && !@pt.tree.descendents(n, root=@pt.root).include?(node)
-        out_of_clade += prob_pred_error[0][state]
-        next
-      end
+      state = @pp.profiles[@pp.symbol2index[g]][num]
 
       log_prob_near_leaves[num][0] = prob_pred_error[0][state]
       log_prob_near_leaves[num][1] = prob_pred_error[1][state]
+      log_prob_near_leaves[num][2] = prob_pred_error[2][state]
     }
 
-    n_index = @pt.sorted_nodes.index(n)
+    n_index = @pt.sorted_nodes.index(gg)
     @pt.sorted_nodes.each_with_index { |node, num|
       if num >= n_index
         break
       end
 
-      if n != node && !@pt.tree.descendents(n, root=@pt.root).include?(node)
+      if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
         next
+      elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
+        if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
+          next
+        end
       end
 
       log_prob[num][0] = log_prob_near_leaves[num][0] + log_prob_from_leaves[num][0][0] + log_prob_from_leaves[num][1][0]
       log_prob[num][1] = log_prob_near_leaves[num][1] + log_prob_from_leaves[num][0][1] + log_prob_from_leaves[num][1][1]
+      log_prob[num][2] = log_prob_near_leaves[num][2] + log_prob_from_leaves[num][0][2] + log_prob_from_leaves[num][1][2]
 
       anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
       chd_index = @pt.which_child[node]
 
-      log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp(
-                                                                        @null_m[0][0]+log_prob[num][0],
-                                                                        @null_m[0][1]+log_prob[num][1], false)
+      log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp3(
+                                                                        t_m[0][0]+log_prob[num][0],
+                                                                        t_m[0][1]+log_prob[num][1],
+                                                                        t_m[0][2]+log_prob[num][2])
 
-      log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp(
-                                                                        @null_m[1][0]+log_prob[num][0],
-                                                                        @null_m[1][1]+log_prob[num][1], false)
+      log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp3(
+                                                                        t_m[1][0]+log_prob[num][0],
+                                                                        t_m[1][1]+log_prob[num][1],
+                                                                        t_m[1][2]+log_prob[num][2])
 
-
+      log_prob_from_leaves[anc_index][chd_index][2] = Utils.log_sum_exp3(
+                                                                        t_m[2][0]+log_prob[num][0],
+                                                                        t_m[2][1]+log_prob[num][1],
+                                                                        t_m[2][2]+log_prob[num][2])
     }
-
 
     log_prob[n_index][0] = log_prob_from_leaves[n_index][0][0] + log_prob_from_leaves[n_index][1][0]
     log_prob[n_index][1] = log_prob_from_leaves[n_index][0][1] + log_prob_from_leaves[n_index][1][1]
+    log_prob[n_index][2] = log_prob_from_leaves[n_index][0][2] + log_prob_from_leaves[n_index][1][2]
+
+    log_backward[n_index][0] = -1*MAX
+    log_backward[n_index][1] = 0
+    log_backward[n_index][2] = -1*MAX
+    
+    @pt.sorted_nodes.reverse.each_with_index { |node, num|
+      if num <= @pt.n_s-1
+        break
+      end
+
+      if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+        next
+      elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
+        if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
+          next
+        end
+      end
+
+      if node != gg
+        log_backward[num][0] = Utils.log_sum_exp3(
+                                                  t_m[0][0]+log_backward_from_parent[num][0],
+                                                  t_m[1][0]+log_backward_from_parent[num][1],
+                                                  t_m[2][0]+log_backward_from_parent[num][2],
+                                                  )
+        log_backward[num][1] = Utils.log_sum_exp3(
+                                                  t_m[0][1]+log_backward_from_parent[num][0],
+                                                  t_m[1][1]+log_backward_from_parent[num][1],
+                                                  t_m[2][2]+log_backward_from_parent[num][2],
+                                                  )
+        log_backward[num][2] = Utils.log_sum_exp3(
+                                                  t_m[0][2]+log_backward_from_parent[num][0],
+                                                  t_m[1][2]+log_backward_from_parent[num][1],
+                                                  t_m[2][2]+log_backward_from_parent[num][2],
+                                                  )
+
+      end
+
+      l1 = log_backward[num][0] + log_prob[num][0]
+      l2 = log_backward[num][1] + log_prob[num][1]
+      l3 = log_backward[num][2] + log_prob[num][2]
+
+      state = sample_three_probs(l1, l2, l3)
+      
+      @hidden_samp[i][num] = state
+
+      log_prob_near_leaves[num][0]     = -1*MAX
+      log_prob_near_leaves[num][1]     = -1*MAX
+      log_prob_near_leaves[num][2]     = -1*MAX
+      log_prob_near_leaves[num][state] = 0
+
+      @pt.tree.children(node, root=@pt.root).each do |child|
+        chd_index = @pt.node2num[child]
+        log_backward_from_parent[chd_index][0] = log_prob_near_leaves[num][0]
+        log_backward_from_parent[chd_index][1] = log_prob_near_leaves[num][1]
+        log_backward_from_parent[chd_index][2] = log_prob_near_leaves[num][2]
+      end
+
+    }
+
+    @pt.sorted_nodes.reverse.each_with_index { |node, num|
+      if num > @pt.n_s-1
+        next
+      end
+      
+      if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+        next
+      elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
+        if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
+          next
+        end
+      end
+
+      log_backward[num][0] = Utils.log_sum_exp3(
+                                                t_m[0][0]+log_backward_from_parent[num][0],
+                                                t_m[1][0]+log_backward_from_parent[num][1],
+                                                t_m[2][0]+log_backward_from_parent[num][2],
+                                                )
+      log_backward[num][1] = Utils.log_sum_exp3(
+                                                t_m[0][1]+log_backward_from_parent[num][0],
+                                                t_m[1][1]+log_backward_from_parent[num][1],
+                                                t_m[2][2]+log_backward_from_parent[num][2],
+                                                )
+      log_backward[num][2] = Utils.log_sum_exp3(
+                                                t_m[0][2]+log_backward_from_parent[num][0],
+                                                t_m[1][2]+log_backward_from_parent[num][1],
+                                                t_m[2][2]+log_backward_from_parent[num][2],
+                                                )
+
+      l1 = log_backward[num][0] + log_prob[num][0]
+      l2 = log_backward[num][1] + log_prob[num][1]
+      l3 = log_backward[num][2] + log_prob[num][2]
+
+      state = sample_three_probs(l1, l2, l3)
+      
+      @hidden_samp[i][num] = state
+
+      log_prob_near_leaves[num][0]     = -1*MAX
+      log_prob_near_leaves[num][1]     = -1*MAX
+      log_prob_near_leaves[num][2]     = -1*MAX
+      log_prob_near_leaves[num][state] = 0
+    }
 
   end
 

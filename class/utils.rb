@@ -1,5 +1,31 @@
 class Utils
 
+  def self.sample_three_probs(log1, log2, log3)
+    max = [p1,p2,p3].max
+
+    p1 = Math.exp(log1-max)
+    p2 = Math.exp(log2-max)
+    p3 = Math.exp(log3-max)
+
+    sum = p1+p2+p3
+    p1 /= sum
+    p2 /= sum
+    p3 /= sum
+
+    prng = Random.new()
+    random = prng.rand(1.0)
+
+    if random < p1
+      return 0
+    elsif p1 <= random && random < p2
+      return 1
+    elsif p2 <= random
+      return 2
+    else
+      return -1 #error check
+    end
+  end
+
   def self.log_sum_exp(a, b, f = boolean)
     return b if f
     return a + Math.log(2) if a == b
