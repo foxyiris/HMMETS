@@ -1,7 +1,7 @@
 class Utils
 
   def self.sample_three_probs(log1, log2, log3)
-    max = [p1,p2,p3].max
+    max = [log1,log2,log3].max
 
     p1 = Math.exp(log1-max)
     p2 = Math.exp(log2-max)

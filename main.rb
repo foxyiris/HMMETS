@@ -242,6 +242,7 @@ if __FILE__ == $0
   #input_genes = pp.symbol2index.keys
   ih = InferHist.new(pt, pp, input_genes)
   ih.pre_process()
+  ih.mcmc(3000,400)
 
   #if ih.gain_branch[input_genes[0]].name != ""
   #  p ih.gain_branch[input_genes[0]].name

@@ -20,16 +20,15 @@ class InferHist
                     [log(1), log(0)],
                     [log(0.03), log(0.97)]
                    ]
-    # below var contains branch specific transition params for each input gene
-    @tm_samp     = Array.new(input_genes.size).map{
-                     Array.new(@N).map{
-                       Array.new(3).map{
-                         Array.new(3, log(0))
-                       }
-                     }
-                   }
     # below var contains sampled states at each node for each gene
     @hidden_samp = Array.new(input_genes.size).map{ Array.new(@N, nil) }
+
+    # parameters for prior
+    @a   = 0.0045 # beta
+    @b   = 0.1455 # beta
+    @al1 = 0.001  # dirichlet
+    @al2 = 0.002  # dirichlet
+    @al3 = 0.003  # dirichlet
 
     # in the future this has to be k-D array? to store MULTI gainings.
     @gain_branch        = Hash.new()
@@ -51,6 +50,12 @@ class InferHist
   end
 
   def mcmc(total, burn_in)
+    (0..total-1).each do |itr|
+      STDERR.puts "Running..#{itr}"
+      @input_genes.each_with_index do |gene, i|
+        sampling_state(i, gene)
+      end
+    end
   end
 
   def marginal_ML(g = gene, gn = g_gain_node, sn = s_gain_node)
@@ -532,6 +537,12 @@ class InferHist
   def sampling_state(i = input_index, g = gene)
     gg = @gain_branch[g]
     sg = @signal_gain_branch[g]
+
+    if !gg || !sg
+      STDERR.puts "Error: gene gain or/and signal gain have not been estimated."
+      return
+    end
+
     # memo for me-> Ruby assings same reference with such declarations:
     #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
     #   Confirm not to declare with above style in ruby when using multi-D array.
@@ -540,6 +551,14 @@ class InferHist
     log_prob                 = Array.new(@N).map{ Array.new(3,0) }
     log_backward             = Array.new(@N).map{ Array.new(3,0) }
     log_backward_from_parent = Array.new(@N).map{ Array.new(3,0) }
+
+    # below var contains branch specific transition params for each input gene
+    t_mat = Array.new(@N).map{
+              Array.new(3).map{
+                Array.new(3, log(0))
+              }
+            }
+
 
     #sg    = 0.0072 # signal gain, global
     #sg    = 0.0830 # signal gain, mts annotated
@@ -562,11 +581,18 @@ class InferHist
           ]
 
     if @hidden_samp[i][0] == nil
+    #if true
       # in case of first round
-      t_mat = t_m
+      (0..@N-1).each do |i|
+        t_mat[i] = t_m
+      end
     else
       # estimate branch specific parameter
       @pt.sorted_nodes.each_with_index { |node, num|
+        if num >= @N-1
+          break
+        end
+
         if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
           next
         elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
@@ -577,13 +603,13 @@ class InferHist
 
             count[@hidden_samp[i][anc_index]][@hidden_samp[i][num]] += 1
 
-            @tm_samp[i][num][0][0] = 0
-            @tm_samp[i][num][1][0] = log((@a+count[1][0])/(@a+@b+count[1][0]+count[1][1])) #beta dist
-            @tm_samp[i][num][1][1] = log(1 - @tm_samp[i][num][1][0])
-            @tm_samp[i][num][1][2] = log(0)
-            @tm_samp[i][num][2][0] = log(0)
-            @tm_samp[i][num][2][1] = log(0)
-            @tm_samp[i][num][2][2] = log(0)
+            t_mat[num][0][0] = 0
+            t_mat[num][1][0] = log((@a+count[1][0])/(@a+@b+count[1][0]+count[1][1])) #beta dist
+            t_mat[num][1][1] = log(1 - t_mat[num][1][0])
+            t_mat[num][1][2] = log(0)
+            t_mat[num][2][0] = log(0)
+            t_mat[num][2][1] = log(0)
+            t_mat[num][2][2] = log(0)
 
           else
             # mts region
@@ -592,16 +618,17 @@ class InferHist
 
             count[@hidden_samp[i][anc_index]][@hidden_samp[i][num]] += 1
 
-            @tm_samp[i][num][0][0] = 0
-            @tm_samp[i][num][1][0] = log((@a+count[1][0])/(@a+@b+count[1][0]+count[1][1])) #beta dist
-            @tm_samp[i][num][1][1] = log(1 - @tm_samp[i][num][1][0])
-            @tm_samp[i][num][1][2] = log(0)
-            @tm_samp[i][num][2][0] = log((@al1+count[2][0])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2])) #gamma dist
-            @tm_samp[i][num][2][1] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
-            @tm_samp[i][num][2][2] = log(1 - @tm_samp[i][num][2][0] - @tm_samp[i][num][2][1])
+            t_mat[num][0][0] = 0
+            t_mat[num][1][0] = log((@a+count[1][0])/(@a+@b+count[1][0]+count[1][1])) #beta dist
+            t_mat[num][1][1] = log(1 - exp(t_mat[num][1][0]))
+            t_mat[num][1][2] = log(0)
+            t_mat[num][2][0] = log((@al1+count[2][0])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2])) #gamma dist
+            t_mat[num][2][1] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
+            t_mat[num][2][2] = log(1 - exp(t_mat[num][2][0]) - exp(t_mat[num][2][1]))
+
           end
         end
-      end # end of each
+      } # end of each
 
     end # end of if
 
@@ -617,6 +644,8 @@ class InferHist
     }
 
     n_index = @pt.sorted_nodes.index(gg)
+    s_index = @pt.sorted_nodes.index(sg)
+
     @pt.sorted_nodes.each_with_index { |node, num|
       if num >= n_index
         break
@@ -638,57 +667,73 @@ class InferHist
       chd_index = @pt.which_child[node]
 
       log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp3(
-                                                                        t_m[0][0]+log_prob[num][0],
-                                                                        t_m[0][1]+log_prob[num][1],
-                                                                        t_m[0][2]+log_prob[num][2])
+                                                                        t_mat[num][0][0]+log_prob[num][0],
+                                                                        t_mat[num][0][1]+log_prob[num][1],
+                                                                        t_mat[num][0][2]+log_prob[num][2])
 
       log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp3(
-                                                                        t_m[1][0]+log_prob[num][0],
-                                                                        t_m[1][1]+log_prob[num][1],
-                                                                        t_m[1][2]+log_prob[num][2])
+                                                                        t_mat[num][1][0]+log_prob[num][0],
+                                                                        t_mat[num][1][1]+log_prob[num][1],
+                                                                        t_mat[num][1][2]+log_prob[num][2])
 
       log_prob_from_leaves[anc_index][chd_index][2] = Utils.log_sum_exp3(
-                                                                        t_m[2][0]+log_prob[num][0],
-                                                                        t_m[2][1]+log_prob[num][1],
-                                                                        t_m[2][2]+log_prob[num][2])
+                                                                        t_mat[num][2][0]+log_prob[num][0],
+                                                                        t_mat[num][2][1]+log_prob[num][1],
+                                                                        t_mat[num][2][2]+log_prob[num][2])
     }
 
     log_prob[n_index][0] = log_prob_from_leaves[n_index][0][0] + log_prob_from_leaves[n_index][1][0]
     log_prob[n_index][1] = log_prob_from_leaves[n_index][0][1] + log_prob_from_leaves[n_index][1][1]
     log_prob[n_index][2] = log_prob_from_leaves[n_index][0][2] + log_prob_from_leaves[n_index][1][2]
 
+    p log_prob[n_index]
+
     log_backward[n_index][0] = -1*MAX
     log_backward[n_index][1] = 0
     log_backward[n_index][2] = -1*MAX
-    
-    @pt.sorted_nodes.reverse.each_with_index { |node, num|
+
+    # enforcely determine gg state and sg state
+    if n_index == s_index
+      log_backward[n_index][1] = -1*MAX
+      log_backward[n_index][2] = 0
+    else
+      log_backward[s_index][0] = -1*MAX
+      log_backward[s_index][1] = -1*MAX
+      log_backward[s_index][2] = 0
+    end
+
+    last_index = @pt.sorted_nodes.size-1
+    last_index.downto(0) {|num|
+
       if num <= @pt.n_s-1
         break
       end
 
+      node = @pt.sorted_nodes[num]
+
       if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
         next
-      elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
-        if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
-          next
-        end
+      #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
+      #  if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
+      #    next
+      #  end
       end
 
       if node != gg
         log_backward[num][0] = Utils.log_sum_exp3(
-                                                  t_m[0][0]+log_backward_from_parent[num][0],
-                                                  t_m[1][0]+log_backward_from_parent[num][1],
-                                                  t_m[2][0]+log_backward_from_parent[num][2],
+                                                  t_mat[num][0][0]+log_backward_from_parent[num][0],
+                                                  t_mat[num][1][0]+log_backward_from_parent[num][1],
+                                                  t_mat[num][2][0]+log_backward_from_parent[num][2],
                                                   )
         log_backward[num][1] = Utils.log_sum_exp3(
-                                                  t_m[0][1]+log_backward_from_parent[num][0],
-                                                  t_m[1][1]+log_backward_from_parent[num][1],
-                                                  t_m[2][2]+log_backward_from_parent[num][2],
+                                                  t_mat[num][0][1]+log_backward_from_parent[num][0],
+                                                  t_mat[num][1][1]+log_backward_from_parent[num][1],
+                                                  t_mat[num][2][2]+log_backward_from_parent[num][2],
                                                   )
         log_backward[num][2] = Utils.log_sum_exp3(
-                                                  t_m[0][2]+log_backward_from_parent[num][0],
-                                                  t_m[1][2]+log_backward_from_parent[num][1],
-                                                  t_m[2][2]+log_backward_from_parent[num][2],
+                                                  t_mat[num][0][2]+log_backward_from_parent[num][0],
+                                                  t_mat[num][1][2]+log_backward_from_parent[num][1],
+                                                  t_mat[num][2][2]+log_backward_from_parent[num][2],
                                                   )
 
       end
@@ -697,8 +742,8 @@ class InferHist
       l2 = log_backward[num][1] + log_prob[num][1]
       l3 = log_backward[num][2] + log_prob[num][2]
 
-      state = sample_three_probs(l1, l2, l3)
-      
+      state = Utils.sample_three_probs(l1, l2, l3)
+
       @hidden_samp[i][num] = state
 
       log_prob_near_leaves[num][0]     = -1*MAX
@@ -707,7 +752,12 @@ class InferHist
       log_prob_near_leaves[num][state] = 0
 
       @pt.tree.children(node, root=@pt.root).each do |child|
+        if child == @pt.tree.root
+          next
+        end
+
         chd_index = @pt.node2num[child]
+
         log_backward_from_parent[chd_index][0] = log_prob_near_leaves[num][0]
         log_backward_from_parent[chd_index][1] = log_prob_near_leaves[num][1]
         log_backward_from_parent[chd_index][2] = log_prob_near_leaves[num][2]
@@ -715,7 +765,12 @@ class InferHist
 
     }
 
+    #puts "#{i} #{t_m[0][0]}"
+    #p @hidden_samp
+    #p log_prob
+
     @pt.sorted_nodes.reverse.each_with_index { |node, num|
+
       if num > @pt.n_s-1
         next
       end
@@ -748,7 +803,7 @@ class InferHist
       l2 = log_backward[num][1] + log_prob[num][1]
       l3 = log_backward[num][2] + log_prob[num][2]
 
-      state = sample_three_probs(l1, l2, l3)
+      state = Utils.sample_three_probs(l1, l2, l3)
       
       @hidden_samp[i][num] = state
 
