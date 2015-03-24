@@ -39,17 +39,26 @@ class Utils
   end
 
   def self.log_sum_exp3(a, b, c)
+    return self.log_sum_exp(self.log_sum_exp(a, b, false), c, false)
+  end
+
+=begin
+  # deprecated. makes NaN error sometimes
+  def self.log_sum_exp3(a, b, c)
     return a + Math.log(3) if a == b && b == c
 
     if( a > b  && a > c)
-      return a + Math.log( 1 + Math.exp(b-a) + Math.exp(c-a))
+      v = a + Math.log( 1 + Math.exp(b-a) + Math.exp(c-a))
+      return v
     elsif ( b > a && b > c)
-      return b + Math.log( 1 + Math.exp(a-b) + Math.exp(c-b))
+      v = b + Math.log( 1 + Math.exp(a-b) + Math.exp(c-b))
+      return v
     else
-      return c + Math.log( 1 + Math.exp(a-c) + Math.exp(b-c))
+      v = c + Math.log( 1 + Math.exp(a-c) + Math.exp(b-c))
+      return v
     end
 
   end
-
+=end
 
 end
