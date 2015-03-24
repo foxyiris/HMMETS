@@ -7,8 +7,8 @@ class InferHist
 
   attr_reader :gain_branch
   attr_reader :signal_gain_branch
-  attr_reader :gene_lost_branch
-  attr_reader :signal_lost_branch
+  attr_reader :hidden_states
+  attr_reader :branch_params
 
   MAX     = 1e50
   FP_rate = 0.017
@@ -40,9 +40,12 @@ class InferHist
     # in the future this has to be k-D array? to store MULTI gainings.
     @gain_branch        = Hash.new()
     @signal_gain_branch = Hash.new()
-    # lost branch can be many, so they are contained as an array
-    @gene_lost_branch   = Hash.new {|hash,key| hash[key] = Array.new()}
-    @signal_lost_branch = Hash.new {|hash,key| hash[key] = Array.new()}
+
+    # changed the policty to contain all parameters for each branch
+    # each node have three parameters each.
+    # [loss, non, mts] for hidden and [p10, p20, p21] for params.
+    @hidden_states = Hash.new {|hash,key| hash[key] = Array.new(@N).map{ Array.new(3) } }
+    @branch_params = Hash.new {|hash,key| hash[key] = Array.new(@N).map{ Array.new(3) } }
 
   end
 
@@ -68,6 +71,7 @@ class InferHist
     smp_size = (total-burn_in).to_f
 
     (0..@input_genes.size-1).each do |gene_num|
+      gene_name   = @input_genes[gene_num] 
       state_count = Array.new(@N).map{ Array.new(3,0) }
       param_sum   = Array.new(@N).map{ Array.new(3,0) }
 
@@ -88,12 +92,19 @@ class InferHist
       end
 
       (0..@N-1).each do |num|
+        @hidden_states[gene_name][num][0] = state_count[num][0].to_f/smp_size
+        @hidden_states[gene_name][num][1] = state_count[num][1].to_f/smp_size
+        @hidden_states[gene_name][num][2] = state_count[num][2].to_f/smp_size
+
         printf("%.2f, %.2f, %.2f", state_count[num][0].to_f/smp_size, state_count[num][1].to_f/smp_size, state_count[num][2].to_f/smp_size)
         print "\t"
       end
       puts ''
 
       (0..@N-1).each do |num|
+        @branch_params[gene_name][num][0] = exp(param_sum[num][0])/smp_size #p10
+        @branch_params[gene_name][num][1] = exp(param_sum[num][1])/smp_size #p20
+        @branch_params[gene_name][num][2] = exp(param_sum[num][2])/smp_size #p21
         printf("%.2f, %.2f, %.2f", exp(param_sum[num][0])/smp_size, exp(param_sum[num][1])/smp_size, exp(param_sum[num][2])/smp_size)
         print "\t"
       end
@@ -661,7 +672,6 @@ class InferHist
           ]
 
     if @hidden_samp[i][0] == nil
-    #if true
       # in case of first round
       (0..@N-1).each do |j|
         t_mat[j] = t_m
@@ -757,10 +767,10 @@ class InferHist
 
       if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
         next
-      elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
-        if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
-          next
-        end
+      #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
+      #  if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
+      #    next
+      #  end
       end
 
       log_prob[num][0] = log_prob_near_leaves[num][0] + log_prob_from_leaves[num][0][0] + log_prob_from_leaves[num][1][0]
@@ -818,14 +828,13 @@ class InferHist
     log_backward[n_index][2] = -1*MAX
 
     # enforcely determine gg state and sg state
+    # if n_index != s_index, set later on. (if we set 0 here, it'll be overwritten after all later).
     if n_index == s_index
       log_backward[n_index][1] = -1*MAX
       log_backward[n_index][2] = 0
-    else
-      log_backward[s_index][0] = -1*MAX
-      log_backward[s_index][1] = -1*MAX
-      log_backward[s_index][2] = 0
     end
+
+
 
     last_index = @pt.sorted_nodes.size-1
     last_index.downto(0) {|num|
@@ -895,6 +904,14 @@ class InferHist
 
       end
 
+      # if current node is estimated signal gain node, set prob 1 enforcely
+      # Although P(state at node == mts|parent state) != 1, below should work.
+      if node == sg
+        log_backward[num][0] = -1*MAX
+        log_backward[num][1] = -1*MAX
+        log_backward[num][2] = 0
+      end
+
       l1 = log_backward[num][0] + log_prob[num][0]
       l2 = log_backward[num][1] + log_prob[num][1]
       l3 = log_backward[num][2] + log_prob[num][2]
@@ -938,10 +955,10 @@ class InferHist
       
       if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
         next
-      elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
-        if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
-          next
-        end
+      #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
+      #  if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
+      #    next
+      #  end
       end
 
 =begin
