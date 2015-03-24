@@ -5,12 +5,9 @@ require_relative './class/phylo_tree.rb'
 require_relative './class/infer_hist.rb'
 Bundler.require
 
-#FP_rate = 0.005
-#FN_rate = 0.005
-
 class MakePhylogenyPDF < Prawn::Document
 
-  def initialize(pt = phylotree, gene_name, gene_branch, signal_gene_branch, pp)
+  def initialize(pt = phylotree, gene_name, gene_branch, signal_gene_branch, hidden_states, branch_params, pp)
     super(:page_layout => :landscape)
 
     #gb.shift
@@ -18,6 +15,8 @@ class MakePhylogenyPDF < Prawn::Document
     @gn              = gene_name
     @gb              = gene_branch
     @sgb             = signal_gene_branch
+    @hs              = hidden_states
+    @bp              = branch_params
     @phylo_prof      = pp
     @root            = @pt.root
     @line_width      = 1
@@ -145,7 +144,7 @@ class MakePhylogenyPDF < Prawn::Document
     end
   end
 
-  def _line(r)
+  def _line(r, state_parent)
     _children = @pt.tree.children(r)
 
     if r == @pt.root
@@ -155,16 +154,68 @@ class MakePhylogenyPDF < Prawn::Document
     if _children.size != 0
 
       _children.each do |child|
-        if _is_signal_gained?(child)
-          stroke_color @stroke_color[3]
-        elsif _is_gained?(child)
-          stroke_color @stroke_color[2]
+
+        state = nil
+
+        num = @pt.node2num[child]
+
+        if state_parent == 0
+          if child == @sgb[@gn]
+            stroke_color @stroke_color[3]
+            state = 2
+          elsif child == @gb[@gn]
+            stroke_color @stroke_color[2]
+            state = 1
+          else
+            stroke_color @stroke_color[1]
+            state = state_parent
+          end
+        elsif state_parent == 1
+
+          if child == @sgb[@gn]
+            stroke_color @stroke_color[3]
+            state = 2
+          else
+            if @bp[@gn][num][0] > 0.5
+              p10_hex = (255*@bp[@gn][num][0]).to_i.to_s(16)
+              p10_hex = p10_hex << "0000"
+              stroke_color p10_hex
+              state = 0
+            else
+              stroke_color @stroke_color[2]
+              state = state_parent
+            end
+          end
+
+        elsif state_parent == 2
+          if @bp[@gn][num][1] > 0.33
+            p20_hex = (255*@bp[@gn][num][1]).to_i.to_s(16)
+            p20_hex = p20_hex << "0000"
+            stroke_color p20_hex
+            state = 0
+          elsif @bp[@gn][num][2] > 0.33
+            p21_hex = (255*@bp[@gn][num][2]).to_i.to_s(16)
+            p21_hex = "0000" << p21_hex
+            stroke_color p21_hex
+            state = 1
+          else
+            stroke_color @stroke_color[3]
+            state = 2
+          end
         else
-          stroke_color @stroke_color[0]
+          STDERR.puts "Error: unknown state is specified. #{state_parent}"
         end
 
+        #if _is_signal_gained?(child)
+        #  stroke_color @stroke_color[3]
+        #elsif _is_gained?(child)
+        #  stroke_color @stroke_color[2]
+        #else
+        #  stroke_color @stroke_color[0]
+        #end
+
         stroke { line [@node_pos[r][0],@node_pos[r][1]], [@node_pos[child][0],@node_pos[child][1]] }
-        _line(child)
+        _line(child, state)
 
         stroke_color @base_stroke_color
 
@@ -202,8 +253,17 @@ class MakePhylogenyPDF < Prawn::Document
       current_y_pos -= span + @taxon_font_size
     end
 
+    state = nil
+    if _is_signal_gained?(@root)
+      state = 2
+    elsif _is_gained?(@root)
+      state = 1
+    else
+      state = 0
+    end
+
     _assign_node_pos(@root, max)
-    _line(@root)
+    _line(@root, state)
     _add_root_annotation
     _draw_prof
     
@@ -238,13 +298,18 @@ if __FILE__ == $0
 
   pp.swap_rows(pt)
 
+  # debug data
+  #input_genes = ["YDR079W", "DUMMY"]
+  input_genes = ["DUMMY"]
+
+  # MTS data
   #input_genes = ["YNL306W"]
-  input_genes = ["YDL069C"]
+  #input_genes = ["YDL069C"]
   #input_genes = ["YDL069C","YPR011C"]
   #input_genes = pp.symbol2index.keys
   ih = InferHist.new(pt, pp, input_genes)
   ih.pre_process()
-  ih.mcmc(100,40)
+  ih.mcmc(10,4)
 
   #if ih.gain_branch[input_genes[0]].name != ""
   #  p ih.gain_branch[input_genes[0]].name
@@ -261,7 +326,7 @@ if __FILE__ == $0
     end
   end
   
-  mp = MakePhylogenyPDF.new( pt, input_genes[0], ih.gain_branch, ih.signal_gain_branch, taxon2prof)
+  mp = MakePhylogenyPDF.new(pt, input_genes[0], ih.gain_branch, ih.signal_gain_branch, ih.hidden_states, ih.branch_params, taxon2prof)
   mp.render_file("prawn.pdf")
 
   exit 0
