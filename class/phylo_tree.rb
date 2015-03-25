@@ -1,6 +1,7 @@
 class PhyloTree
 
   attr_reader :sorted_nodes
+  attr_reader :same_sub_tree
   attr_reader :which_child
   attr_reader :node2num
   attr_reader :tree
@@ -10,12 +11,13 @@ class PhyloTree
   def initialize(tree)
 
     # sorted_nodes contains leaves nodes first, then pushing ancestral nodes
-    @sorted_nodes = Array.new(0)
-    @node2num     = Hash.new()
-    @which_child  = Hash.new()
-    @tree         = tree
-    @index        = 0
-    @n_s          = 0
+    @sorted_nodes  = Array.new(0)
+    @node2num      = Hash.new()
+    @which_child   = Hash.new()
+    @same_sub_tree = Hash.new {|h,k| h[k] = Hash.new(nil) }
+    @tree          = tree
+    @index         = 0
+    @n_s           = 0
 
     # leaves returns root of root due to the link number, so omit it.
     # in other words, #leaf != tree.leaves.size
@@ -37,8 +39,27 @@ class PhyloTree
 
     _make_sorted_array(@root)
     _make_hash(@sorted_nodes)
+    _make_same_sub_tree(@root)
 
     #_add_children(root_node)
+
+  end
+
+  def _make_same_sub_tree(r = root)
+    array = @tree.children(r, root=@root)
+
+    if array.size != 0
+      array.each do |child|
+        _make_same_sub_tree(child)
+        _make_same_sub_tree(child)
+      end
+    end
+
+    @tree.descendents(r, root=@root).each do |desc|
+      same_sub_tree[r][desc] = 1
+    end
+
+    same_sub_tree[r][r] = 1
 
   end
 
@@ -102,3 +123,46 @@ class PhyloTree
   end
 
 end
+
+=begin
+# test code
+if __FILE__ == $0
+  require 'bundler'
+  Bundler.require
+
+  treeio = Bio::FlatFile.open(Bio::Newick, ARGV.shift)
+
+  if newick = treeio.next_entry
+    newick.options[:bootstrap_style] = :disabled
+    tree = newick.tree
+
+    pt = PhyloTree.new(tree)
+  end
+
+  naive_array = Array.new(pt.sorted_nodes.size).map{ Array.new(pt.sorted_nodes.size) }
+  hash_array  = Array.new(pt.sorted_nodes.size).map{ Array.new(pt.sorted_nodes.size) }
+
+  pt.sorted_nodes.each_with_index do |node, i|
+    pt.sorted_nodes.each_with_index do |node_inside, j|
+      if node == node_inside || pt.tree.descendents(node_inside, root=pt.root).include?(node)
+        naive_array[i][j] = 1
+      else
+        naive_array[i][j] = 0
+      end
+
+      if pt.same_sub_tree[node_inside][node]
+        hash_array[i][j] = 1
+      else
+        hash_array[i][j] = 0
+      end
+    end
+  end
+
+  if naive_array == hash_array
+    puts "passed"
+  else
+    puts "not passed"
+  end
+
+end
+=end

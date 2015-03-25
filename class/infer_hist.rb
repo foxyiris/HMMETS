@@ -187,11 +187,13 @@ class InferHist
       node  = @pt.sorted_nodes[num]
       state = @pp.profiles[@pp.symbol2index[g]][num]
 
-      if gn != node && !@pt.tree.descendents(gn, root=@pt.root).include?(node)
+      #if gn != node && !@pt.tree.descendents(gn, root=@pt.root).include?(node)
+      if !@pt.same_sub_tree[gn][node]
         out_of_gg_clade += prob_pred_error[0][state]
         next
-      elsif gn == node || @pt.tree.descendents(gn, root=@pt.root).include?(node)
-        if sn != node && !@pt.tree.descendents(sn, root=@pt.root).include?(node)
+      else
+        #if sn != node && !@pt.tree.descendents(sn, root=@pt.root).include?(node)
+        if !@pt.same_sub_tree[sn][node]
           out_of_sg_clade += prob_pred_error[1][state]
           next
         end
@@ -208,12 +210,13 @@ class InferHist
         break
       end
 
-      if gn != node && !@pt.tree.descendents(gn, root=@pt.root).include?(node)
+      #if gn != node && !@pt.tree.descendents(gn, root=@pt.root).include?(node)
+      if !@pt.same_sub_tree[gn][node]
         next
-      elsif gn == node || @pt.tree.descendents(gn, root=@pt.root).include?(node)
-        if sn != node && !@pt.tree.descendents(sn, root=@pt.root).include?(node)
-          next
-        end
+      #else
+      #  if sn != node && !@pt.tree.descendents(sn, root=@pt.root).include?(node)
+      #    next
+      #  end
       end
 
       log_prob[num][0] = log_prob_near_leaves[num][0] + log_prob_from_leaves[num][0][0] + log_prob_from_leaves[num][1][0]
@@ -610,7 +613,8 @@ class InferHist
     # tentatively, assume one gaining.
     # loop with all nodes.
     @pt.sorted_nodes.each do |node|
-      if gene_gain_node == node || @pt.tree.descendents(gene_gain_node, root=@pt.root).include?(node)
+      #if gene_gain_node == node || @pt.tree.descendents(gene_gain_node, root=@pt.root).include?(node)
+      if @pt.same_sub_tree[gene_gain_node][node]
         prob = marginal_ML(g, @gain_branch[g], node)
         #STDERR.puts "DEBUG: #{g} #{prob}"
         if prob > max
@@ -686,10 +690,12 @@ class InferHist
           break
         end
 
-        if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+        if !@pt.same_sub_tree[gg][node]
           next
-        elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
-          if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
+        #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
+        else
+          #if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
+          if !@pt.same_sub_tree[sg][node]
             # non-mts region
             count = Array.new(2).map{ Array.new(2,0) }
             anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
@@ -765,7 +771,8 @@ class InferHist
         break
       end
 
-      if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+      #if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+      if !@pt.same_sub_tree[gg][node]
         next
       #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
       #  if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
@@ -845,7 +852,8 @@ class InferHist
 
       node = @pt.sorted_nodes[num]
 
-      if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+      #if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+      if !@pt.same_sub_tree[gg][node]
         next
       #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
       #  if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
@@ -953,7 +961,8 @@ class InferHist
         next
       end
       
-      if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+      #if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+      if !@pt.same_sub_tree[gg][node]
         next
       #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
       #  if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
@@ -1054,7 +1063,8 @@ class InferHist
       node  = @pt.sorted_nodes[num]
       state = @pp.profiles[@pp.symbol2index[g]][num] > 0 ? 1 : 0
 
-      if n != node && !@pt.tree.descendents(n, root=@pt.root).include?(node)
+      #if n != node && !@pt.tree.descendents(n, root=@pt.root).include?(node)
+      if !@pt.same_sub_tree[n][node]
         out_of_clade += prob_pred_error[0][state]
         next
       end
@@ -1069,7 +1079,8 @@ class InferHist
         break
       end
 
-      if n != node && !@pt.tree.descendents(n, root=@pt.root).include?(node)
+      #if n != node && !@pt.tree.descendents(n, root=@pt.root).include?(node)
+      if !@pt.same_sub_tree[n][node]
         next
       end
 
