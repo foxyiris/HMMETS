@@ -82,9 +82,13 @@ class InferHist
         end
 
         @param_cont[gene_num][itr].each_with_index do |array, num|
-          param_sum[num][0] = Utils.log_sum_exp(param_sum[num][0], array[0], (itr==burn_in))
-          param_sum[num][1] = Utils.log_sum_exp(param_sum[num][1], array[1], (itr==burn_in))
-          param_sum[num][2] = Utils.log_sum_exp(param_sum[num][2], array[2], (itr==burn_in))
+          param_sum[num][0] = Utils.log_sum_exp_c(param_sum[num][0], array[0])
+          param_sum[num][1] = Utils.log_sum_exp_c(param_sum[num][1], array[1])
+          param_sum[num][2] = Utils.log_sum_exp_c(param_sum[num][2], array[2])
+
+          #param_sum[num][0] = Utils.log_sum_exp(param_sum[num][0], array[0], (itr==burn_in))
+          #param_sum[num][1] = Utils.log_sum_exp(param_sum[num][1], array[1], (itr==burn_in))
+          #param_sum[num][2] = Utils.log_sum_exp(param_sum[num][2], array[2], (itr==burn_in))
           #print array.join(",")
           #print "\t"
         end
@@ -139,6 +143,7 @@ class InferHist
     }
 
     (0..total-1).each do |itr|
+      STDERR.flush
       STDERR.puts "Running..#{itr}"
       @input_genes.each_with_index do |gene, i|
         sampling_state(i, gene, r, itr)
@@ -752,6 +757,8 @@ class InferHist
 
     end # end of if
 
+    @prev_t_mat = t_mat
+
     # quantitate fluctuation of observed states by pre-calculated performance.
     (0..@pt.n_s-1).each{ |num|
 
@@ -830,14 +837,14 @@ class InferHist
     log_prob[n_index][1] = log_prob_from_leaves[n_index][0][1] + log_prob_from_leaves[n_index][1][1]
     log_prob[n_index][2] = log_prob_from_leaves[n_index][0][2] + log_prob_from_leaves[n_index][1][2]
 
-    log_backward[n_index][0] = -1*MAX
+    log_backward[n_index][0] = log(0)
     log_backward[n_index][1] = 0
-    log_backward[n_index][2] = -1*MAX
+    log_backward[n_index][2] = log(0)
 
     # enforcely determine gg state and sg state
     # if n_index != s_index, set later on. (if we set 0 here, it'll be overwritten after all later).
     if n_index == s_index
-      log_backward[n_index][1] = -1*MAX
+      log_backward[n_index][1] = log(0)
       log_backward[n_index][2] = 0
     end
 
@@ -915,8 +922,8 @@ class InferHist
       # if current node is estimated signal gain node, set prob 1 enforcely
       # Although P(state at node == mts|parent state) != 1, below should work.
       if node == sg
-        log_backward[num][0] = -1*MAX
-        log_backward[num][1] = -1*MAX
+        log_backward[num][0] = log(0)
+        log_backward[num][1] = log(0)
         log_backward[num][2] = 0
       end
 
@@ -936,9 +943,9 @@ class InferHist
       @hidden_samp[i][num] = state
       @state_cont[i][it][num] = state
 
-      log_prob_near_leaves[num][0]     = -1*MAX
-      log_prob_near_leaves[num][1]     = -1*MAX
-      log_prob_near_leaves[num][2]     = -1*MAX
+      log_prob_near_leaves[num][0]     = log(0)
+      log_prob_near_leaves[num][1]     = log(0)
+      log_prob_near_leaves[num][2]     = log(0)
       log_prob_near_leaves[num][state] = 0
 
       @pt.tree.children(node, root=@pt.root).each do |child|
@@ -1023,7 +1030,6 @@ class InferHist
 
       if l1.nan? || l2.nan? || l3.nan?
         STDERR.puts "#{num}: #{l1}, #{l2}, #{l3}. leaf"
-        p t_mat[num]
         exit 1
       else
         state = Utils.sample_three_probs(l1, l2, l3)
@@ -1090,13 +1096,21 @@ class InferHist
       anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
       chd_index = @pt.which_child[node]
 
-      log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp(
+      log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp_c(
                                                                         @null_m[0][0]+log_prob[num][0],
-                                                                        @null_m[0][1]+log_prob[num][1], false)
+                                                                        @null_m[0][1]+log_prob[num][1])
 
-      log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp(
+      log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp_c(
                                                                         @null_m[1][0]+log_prob[num][0],
-                                                                        @null_m[1][1]+log_prob[num][1], false)
+                                                                        @null_m[1][1]+log_prob[num][1])
+
+      #log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp(
+      #                                                                  @null_m[0][0]+log_prob[num][0],
+      #                                                                  @null_m[0][1]+log_prob[num][1], false)
+
+      #log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp(
+      #                                                                  @null_m[1][0]+log_prob[num][0],
+      #                                                                  @null_m[1][1]+log_prob[num][1], false)
 
 
     }
