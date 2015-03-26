@@ -95,6 +95,7 @@ class InferHist
         #puts ''
       end
 
+      print "#{gene_name}\t"
       (0..@N-1).each do |num|
         @hidden_states[gene_name][num][0] = state_count[num][0].to_f/smp_size
         @hidden_states[gene_name][num][1] = state_count[num][1].to_f/smp_size
@@ -105,6 +106,7 @@ class InferHist
       end
       puts ''
 
+      print "#{gene_name}\t"
       (0..@N-1).each do |num|
         @branch_params[gene_name][num][0] = exp(param_sum[num][0])/smp_size #p10
         @branch_params[gene_name][num][1] = exp(param_sum[num][1])/smp_size #p20
