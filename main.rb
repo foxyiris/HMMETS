@@ -299,28 +299,31 @@ if __FILE__ == $0
   pp.swap_rows(pt)
 
   # debug data
-  input_genes = ["DUMMY"]
+  #input_genes = ["DUMMY"]
   #input_genes = ["YDR079W"]
 
   # MTS data
   #input_genes = ["YNL306W"]
   #input_genes = ["YDL069C"]
   #input_genes = ["YDL069C","YPR011C"]
-  #input_genes = pp.symbol2index.keys
+  input_genes = pp.symbol2index.keys
   ih = InferHist.new(pt, pp, input_genes)
   ih.pre_process()
-  ih.mcmc(10000,1000)
+  ih.mcmc(1000,400)
 
-  taxon2prof = Hash.new()
-  pt.tree.leaves.each do |leaf|
-    if leaf.name
-      name = leaf.name.gsub(' ', '_')
-      taxon2prof[leaf.name] = pp.profiles[pp.symbol2index[input_genes[0]]][pp.taxon2index[name]]
+  input_genes.each do |gene|
+    taxon2prof = Hash.new()
+    pt.tree.leaves.each do |leaf|
+      if leaf.name
+        name = leaf.name.gsub(' ', '_')
+        taxon2prof[leaf.name] = pp.profiles[pp.symbol2index[gene]][pp.taxon2index[name]]
+      end
     end
-  end
   
-  mp = MakePhylogenyPDF.new(pt, input_genes[0], ih.gain_branch, ih.signal_gain_branch, ih.hidden_states, ih.branch_params, taxon2prof)
-  mp.render_file("prawn.pdf")
+    mp = MakePhylogenyPDF.new(pt, gene, ih.gain_branch, ih.signal_gain_branch, ih.hidden_states, ih.branch_params, taxon2prof)
+    mp.render_file("figs/#{gene}.pdf")
+  end
 
   exit 0
+
 end
