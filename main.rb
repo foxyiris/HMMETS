@@ -299,8 +299,8 @@ if __FILE__ == $0
   pp.swap_rows(pt)
 
   # debug data
-  #input_genes = ["YDR079W", "DUMMY"]
   input_genes = ["DUMMY"]
+  #input_genes = ["YDR079W"]
 
   # MTS data
   #input_genes = ["YNL306W"]
@@ -309,14 +309,7 @@ if __FILE__ == $0
   #input_genes = pp.symbol2index.keys
   ih = InferHist.new(pt, pp, input_genes)
   ih.pre_process()
-  ih.mcmc(10,4)
-
-  #if ih.gain_branch[input_genes[0]].name != ""
-  #  p ih.gain_branch[input_genes[0]].name
-  #else
-  #  p pt.tree.descendents(ih.gain_branch[input_genes[0]])
-  #end
-  #p pp.profiles[pp.symbol2index[input_genes[0]]]
+  ih.mcmc(10000,1000)
 
   taxon2prof = Hash.new()
   pt.tree.leaves.each do |leaf|
