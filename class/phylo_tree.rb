@@ -51,7 +51,6 @@ class PhyloTree
     if array.size != 0
       array.each do |child|
         _make_same_sub_tree(child)
-        _make_same_sub_tree(child)
       end
     end
 
