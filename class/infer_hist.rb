@@ -608,7 +608,7 @@ class InferHist
       end
     end
     
-    puts "MAX log likelihood: #{max} for #{g}"
+    puts "MAX log likelihood: #{max} for\t#{g}\t#{@pt.node2num[gain_node]}"
     @gain_branch[g] = gain_node
 
   end
@@ -631,7 +631,7 @@ class InferHist
       end
     end
     
-    puts "MAX log likelihood given gene gain node: #{max} for #{g}"
+    puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}"
     @signal_gain_branch[g] = signal_gain_node
 
   end
