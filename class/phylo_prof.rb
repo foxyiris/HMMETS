@@ -70,6 +70,10 @@ class PhyloProf
     @profiles = _profiles
 
     pt.sorted_nodes.each_with_index do |node,i|
+      if i >= pt.n_s
+        break
+      end
+
       @taxon2index[node.name.gsub(' ', '_').to_s] = i
     end
 
