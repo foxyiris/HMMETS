@@ -4,6 +4,7 @@ class PhyloTree
   attr_reader :same_sub_tree
   attr_reader :which_child
   attr_reader :node2num
+  attr_reader :num2node
   attr_reader :tree
   attr_reader :root
   attr_reader :n_s
@@ -32,10 +33,15 @@ class PhyloTree
     @leaf_index = 0
     @int_index  = @n_s
 
-    # Caution: tree.root specifies ancestor of root.
-    # so children(root) returns true root.
-    # In fact, @tree.descendents(@tree.root).size == 2S-1
-    @root = @tree.children(@tree.root)[0]
+    if @tree.descendents(@tree.root).size == 2*@n_s - 1
+      # Caution: tree.root specifies ancestor of root.
+      # so children(root) returns true root.
+      # In fact, @tree.descendents(@tree.root).size == 2S-1
+      @root = @tree.children(@tree.root)[0]
+    else
+      @root = @tree.root
+    end
+
 
     _make_sorted_array(@root)
     _make_hash(@sorted_nodes)
@@ -99,6 +105,8 @@ class PhyloTree
     array.each_with_index do |item, i|
       @node2num[item] = i
     end
+
+    @num2node = @node2num.invert
 
   end
 
