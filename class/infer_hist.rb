@@ -22,7 +22,8 @@ class InferHist
     @is_clade    = Array.new(@N).map{ Array.new(@N) }
     @null_m      = [
                     [log(1), log(0)],
-                    [log(0.03), log(0.97)]
+                    #[log(0.03), log(0.97)]
+                    [log(0.175), log(1-0.175)]
                    ]
     # below var contains sampled states at each node for each gene
     @hidden_samp = Array.new(input_genes.size).map{ Array.new(@N, nil) }
@@ -54,6 +55,7 @@ class InferHist
     @input_genes.each do |gene|
       calc_gene_gain_org(gene)
       calc_signal_gain_org(gene)
+
       #joint_ML(gene)
       #maximum_parsimony(gene)
     end
@@ -78,6 +80,9 @@ class InferHist
       #param_sum   = Array.new(@N).map{ Array.new(3,0) }
       (burn_in..@state_cont[gene_num].size-1).each do |itr|
         @state_cont[gene_num][itr].each_with_index do |state, num|
+          if state == nil
+            next
+          end
           state_count[num][state] += 1
         end
 
@@ -97,22 +102,33 @@ class InferHist
 
       print "#{gene_name}\t"
       (0..@N-1).each do |num|
-        @hidden_states[gene_name][num][0] = state_count[num][0].to_f/smp_size
-        @hidden_states[gene_name][num][1] = state_count[num][1].to_f/smp_size
-        @hidden_states[gene_name][num][2] = state_count[num][2].to_f/smp_size
 
-        printf("%.2f, %.2f, %.2f", state_count[num][0].to_f/smp_size, state_count[num][1].to_f/smp_size, state_count[num][2].to_f/smp_size)
-        print "\t"
+        if !@pt.same_sub_tree[@gain_branch[gene_name]][@pt.num2node[num]]
+          print "-, -, -"
+          print "\t"
+        else
+          @hidden_states[gene_name][num][0] = state_count[num][0].to_f/smp_size
+          @hidden_states[gene_name][num][1] = state_count[num][1].to_f/smp_size
+          @hidden_states[gene_name][num][2] = state_count[num][2].to_f/smp_size
+          printf("%.2f, %.2f, %.2f", state_count[num][0].to_f/smp_size, state_count[num][1].to_f/smp_size, state_count[num][2].to_f/smp_size)
+          print "\t"
+        end
       end
       puts ''
 
       print "#{gene_name}\t"
       (0..@N-1).each do |num|
-        @branch_params[gene_name][num][0] = exp(param_sum[num][0])/smp_size #p10
-        @branch_params[gene_name][num][1] = exp(param_sum[num][1])/smp_size #p20
-        @branch_params[gene_name][num][2] = exp(param_sum[num][2])/smp_size #p21
-        printf("%.2f, %.2f, %.2f", exp(param_sum[num][0])/smp_size, exp(param_sum[num][1])/smp_size, exp(param_sum[num][2])/smp_size)
-        print "\t"
+
+        if !@pt.same_sub_tree[@gain_branch[gene_name]][@pt.num2node[num]]
+          print "-, -, -"
+          print "\t"
+        else
+          @branch_params[gene_name][num][0] = exp(param_sum[num][0])/smp_size #p10
+          @branch_params[gene_name][num][1] = exp(param_sum[num][1])/smp_size #p20
+          @branch_params[gene_name][num][2] = exp(param_sum[num][2])/smp_size #p21
+          printf("%.2f, %.2f, %.2f", exp(param_sum[num][0])/smp_size, exp(param_sum[num][1])/smp_size, exp(param_sum[num][2])/smp_size)
+          print "\t"
+        end
       end
       puts ''
 
@@ -168,11 +184,18 @@ class InferHist
     log_prob_near_leaves = Array.new(@N).map{ Array.new(3,0) }
     log_prob             = Array.new(@N).map{ Array.new(3,0) }
 
+    ### YGOB ###
     #sg    = 0.0072 # signal gain, global
     #sg    = 0.0830 # signal gain, mts annotated
-    sl    = 0.07554 # signal loss, global
+    #sl    = 0.07554 # signal loss, global
     #sl    = 0.05692 # signal loss, mts annotated
-    gl    = 0.02    # gene loss
+    #gl    = 0.02    # gene loss
+
+    ### 54 euk ###
+    sl    = 0.097
+    gl    = 0.175
+
+    ### Error rate ###
     eps   = 0.01
     eps_m = 0.08
 
@@ -198,12 +221,11 @@ class InferHist
       if !@pt.same_sub_tree[gn][node]
         out_of_gg_clade += prob_pred_error[0][state]
         next
-      else
-        #if sn != node && !@pt.tree.descendents(sn, root=@pt.root).include?(node)
-        if !@pt.same_sub_tree[sn][node]
-          out_of_sg_clade += prob_pred_error[1][state]
-          next
-        end
+      #else
+      #  if !@pt.same_sub_tree[sn][node]
+      #    out_of_sg_clade += prob_pred_error[1][state]
+      #    next
+      #  end
       end
 
       log_prob_near_leaves[num][0] = prob_pred_error[0][state]
@@ -221,7 +243,7 @@ class InferHist
       if !@pt.same_sub_tree[gn][node]
         next
       #else
-      #  if sn != node && !@pt.tree.descendents(sn, root=@pt.root).include?(node)
+      #  if !@pt.same_sub_tree[sn][node]
       #    next
       #  end
       end
@@ -460,16 +482,16 @@ class InferHist
     #          [1,0]]
 
     # considering gene loss model but assume no regaining of a gene
-    cost_m = [
-              [0,MAX,MAX],
-              [1,0,1],
-              [1,1,0]]
-
-    # considering gene loss model without any assumption
     #cost_m = [
-    #          [0,1,1],
+    #          [0,MAX,MAX],
     #          [1,0,1],
     #          [1,1,0]]
+
+    # considering gene loss model without any assumption
+    cost_m = [
+              [0,1,1],
+              [1,0,1],
+              [1,1,0]]
 
     # counter for transition event
     counter = Array.new(3).map{ Array.new(3,0) }
@@ -623,7 +645,7 @@ class InferHist
       #if gene_gain_node == node || @pt.tree.descendents(gene_gain_node, root=@pt.root).include?(node)
       if @pt.same_sub_tree[gene_gain_node][node]
         prob = marginal_ML(g, @gain_branch[g], node)
-        #STDERR.puts "DEBUG: #{g} #{prob}"
+        STDERR.puts "DEBUG: #{g} #{prob} #{node.name}"
         if prob > max
           max = prob
           signal_gain_node = node
@@ -661,12 +683,18 @@ class InferHist
               }
             }
 
-
+    ### YGOB ###
     #sg    = 0.0072 # signal gain, global
     #sg    = 0.0830 # signal gain, mts annotated
-    sl    = 0.07554 # signal loss, global
+    #sl    = 0.07554 # signal loss, global
     #sl    = 0.05692 # signal loss, mts annotated
-    gl    = 0.02    # gene loss
+    #gl    = 0.02    # gene loss
+
+    ### 54 euk ###
+    sl    = 0.097
+    gl    = 0.175
+
+    ### Error rate ###
     eps   = 0.01
     eps_m = 0.08
 
@@ -1036,7 +1064,7 @@ class InferHist
       else
         state = Utils.sample_three_probs(l1, l2, l3)
       end
-      
+
       @hidden_samp[i][num] = state
       @state_cont[i][it][num] = state
 
