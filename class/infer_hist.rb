@@ -11,8 +11,6 @@ class InferHist
   attr_reader :branch_params
 
   MAX     = 1e50
-  FP_rate = 0.017
-  FN_rate = 0.2
 
   def initialize(pt = phylo_tree, pp = phylo_profile, input_genes)
     @pt          = pt
@@ -22,18 +20,26 @@ class InferHist
     @is_clade    = Array.new(@N).map{ Array.new(@N) }
     @null_m      = [
                     [log(1), log(0)],
-                    #[log(0.03), log(0.97)]
+                    #[log(0.02), log(0.98)]
                     [log(0.175), log(1-0.175)]
                    ]
     # below var contains sampled states at each node for each gene
     @hidden_samp = Array.new(input_genes.size).map{ Array.new(@N, nil) }
 
-    # parameters for prior
-    @a   = 0.0045 # beta
-    @b   = 0.1455 # beta
+    # parameters of prior for YGOB.
+    #@a   = 0.0045 # beta
+    #@b   = 0.1455 # beta
+    #@al1 = 0.003   # dirichlet
+    #@al2 = 0.005   # dirichlet
+    #@al3 = 0.100   # dirichlet
+
+    # parameters of prior for 54.
+    @a   = 0.02625 # beta
+    @b   = 0.12375 # beta
     @al1 = 0.003   # dirichlet
     @al2 = 0.005   # dirichlet
     @al3 = 0.100   # dirichlet
+
     # container for mcmc samples (init will be conducted in mcmc method)
     @state_cont = nil
     @param_cont = nil
@@ -52,6 +58,7 @@ class InferHist
 
   def pre_process
     # estimate gain of one property
+
     @input_genes.each do |gene|
       calc_gene_gain_org(gene)
       calc_signal_gain_org(gene)
@@ -77,26 +84,22 @@ class InferHist
       state_count = Array.new(@N).map{ Array.new(3,0) }
       param_sum   = Array.new(@N).map{ Array.new(3,0) }
 
-      #param_sum   = Array.new(@N).map{ Array.new(3,0) }
       (burn_in..@state_cont[gene_num].size-1).each do |itr|
         @state_cont[gene_num][itr].each_with_index do |state, num|
-          if state == nil
-            next
+
+          if @pt.same_sub_tree[@gain_branch[gene_name]][@pt.num2node[num]]
+            state_count[num][state] += 1
           end
-          state_count[num][state] += 1
         end
 
         @param_cont[gene_num][itr].each_with_index do |array, num|
-          param_sum[num][0] = Utils.log_sum_exp_c(param_sum[num][0], array[0])
-          param_sum[num][1] = Utils.log_sum_exp_c(param_sum[num][1], array[1])
-          param_sum[num][2] = Utils.log_sum_exp_c(param_sum[num][2], array[2])
-
-          #param_sum[num][0] = Utils.log_sum_exp(param_sum[num][0], array[0], (itr==burn_in))
-          #param_sum[num][1] = Utils.log_sum_exp(param_sum[num][1], array[1], (itr==burn_in))
-          #param_sum[num][2] = Utils.log_sum_exp(param_sum[num][2], array[2], (itr==burn_in))
-          #print array.join(",")
-          #print "\t"
+          if @pt.same_sub_tree[@gain_branch[gene_name]][@pt.num2node[num]]
+            param_sum[num][0] = Utils.log_sum_exp_c(param_sum[num][0], array[0])
+            param_sum[num][1] = Utils.log_sum_exp_c(param_sum[num][1], array[1])
+            param_sum[num][2] = Utils.log_sum_exp_c(param_sum[num][2], array[2])
+          end
         end
+
         #puts ''
       end
 
@@ -161,8 +164,8 @@ class InferHist
     }
 
     (0..total-1).each do |itr|
-      STDERR.flush
-      STDERR.puts "Running..#{itr}"
+      #STDERR.flush
+      STDERR.puts "Running..#{itr}" if(itr % 100 == 0)
       @input_genes.each_with_index do |gene, i|
         sampling_state(i, gene, r, itr)
       end
@@ -172,10 +175,13 @@ class InferHist
 
   end
 
-  def marginal_ML(g = gene, gn = g_gain_node, sn = s_gain_node)
+  # 2015/4/13
+  # I realized theoretical problem treating out of sg clade when calc signal gain branch.
+  # start to fix it.
 
-    out_of_gg_clade = 0
-    out_of_sg_clade = 0
+  # 2015/4/15
+  # Added a missing data state, 3, either non-MTS or MTS.
+  def marginal_ML(g = gene, gn = g_gain_node, sn = s_gain_node)
 
     # memo for me-> Ruby assings same reference with such declarations:
     #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
@@ -183,6 +189,12 @@ class InferHist
     log_prob_from_leaves = Array.new(@N).map{ Array.new(2).map{ Array.new(3, 0) }}
     log_prob_near_leaves = Array.new(@N).map{ Array.new(3,0) }
     log_prob             = Array.new(@N).map{ Array.new(3,0) }
+
+    # treat out of gg clade.
+    out_of_gg_clade = 0
+
+    # flag for if signal gain node is as same as the gene gain node?
+    is_sn_gn_same = false
 
     ### YGOB ###
     #sg    = 0.0072 # signal gain, global
@@ -192,6 +204,7 @@ class InferHist
     #gl    = 0.02    # gene loss
 
     ### 54 euk ###
+    sg    = 0.01  # signal gain, mitochondrial
     sl    = 0.097
     gl    = 0.175
 
@@ -211,41 +224,58 @@ class InferHist
            [log(gl), log(sl),   log(1-sl-gl)]
           ]
 
+    p12 = log(sg)
+    p11 = log(1-sg-gl)
+
+    if sn == gn
+      is_sn_gn_same = true
+    end
+
     # quantitate fluctuation of observed states by pre-calculated performance.
     (0..@pt.n_s-1).each{ |num|
 
       node  = @pt.sorted_nodes[num]
       state = @pp.profiles[@pp.symbol2index[g]][num]
 
-      #if gn != node && !@pt.tree.descendents(gn, root=@pt.root).include?(node)
       if !@pt.same_sub_tree[gn][node]
         out_of_gg_clade += prob_pred_error[0][state]
         next
       #else
+      # 2015/4/13
+      # below part is a souce of theoretical error. out of sg clade, there are two putative states. not only 1.
       #  if !@pt.same_sub_tree[sn][node]
       #    out_of_sg_clade += prob_pred_error[1][state]
       #    next
       #  end
       end
 
-      log_prob_near_leaves[num][0] = prob_pred_error[0][state]
-      log_prob_near_leaves[num][1] = prob_pred_error[1][state]
-      log_prob_near_leaves[num][2] = prob_pred_error[2][state]
+      if state != 3
+        log_prob_near_leaves[num][0] = prob_pred_error[0][state]
+        log_prob_near_leaves[num][1] = prob_pred_error[1][state]
+        log_prob_near_leaves[num][2] = prob_pred_error[2][state]
+      else
+        log_prob_near_leaves[num][0] = prob_pred_error[0][1] # either 1 or 2 is ok.
+        log_prob_near_leaves[num][1] = prob_pred_error[1][1] # 3 can be both 1 and 2.
+        log_prob_near_leaves[num][2] = prob_pred_error[2][2] # 3 can be both 1 and 2.
+      end
     }
 
-    n_index = @pt.sorted_nodes.index(sn)
+    # 2015/4/13
+    # we have to take out of signal gain branch into our account when thinking signal gain. 
+    #n_index = @pt.sorted_nodes.index(sn)
+
+    # plus, I set an assumption signal gain event occurs only once under gene gain tentatively.
+    # to treat this, we cannot use global P12 = 0 anymore, but set P12 = something "when child is sn".
+    # in case of gn == sn, think of short branch within gn. we can think transition P11 or P12 along this branch.
+    # otherwise, sn = gn bias exist due to low P12 prob.
+    n_index = @pt.sorted_nodes.index(gn)
     @pt.sorted_nodes.each_with_index { |node, num|
       if num >= n_index
         break
       end
 
-      #if gn != node && !@pt.tree.descendents(gn, root=@pt.root).include?(node)
       if !@pt.same_sub_tree[gn][node]
         next
-      #else
-      #  if !@pt.same_sub_tree[sn][node]
-      #    next
-      #  end
       end
 
       log_prob[num][0] = log_prob_near_leaves[num][0] + log_prob_from_leaves[num][0][0] + log_prob_from_leaves[num][1][0]
@@ -260,10 +290,18 @@ class InferHist
                                                                         t_m[0][1]+log_prob[num][1],
                                                                         t_m[0][2]+log_prob[num][2])
 
-      log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp3(
-                                                                        t_m[1][0]+log_prob[num][0],
-                                                                        t_m[1][1]+log_prob[num][1],
-                                                                        t_m[1][2]+log_prob[num][2])
+      if !is_sn_gn_same && node == sn
+        log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp3(
+                                                                           t_m[1][0]+log_prob[num][0],
+                                                                           t_m[1][1]+log_prob[num][1],
+                                                                           p12      +log_prob[num][2])
+      else
+        log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp3(
+                                                                           t_m[1][0]+log_prob[num][0],
+                                                                           t_m[1][1]+log_prob[num][1],
+                                                                           t_m[1][2]+log_prob[num][2])
+
+      end
 
       log_prob_from_leaves[anc_index][chd_index][2] = Utils.log_sum_exp3(
                                                                         t_m[2][0]+log_prob[num][0],
@@ -275,7 +313,11 @@ class InferHist
     log_prob[n_index][1] = log_prob_from_leaves[n_index][0][1] + log_prob_from_leaves[n_index][1][1]
     log_prob[n_index][2] = log_prob_from_leaves[n_index][0][2] + log_prob_from_leaves[n_index][1][2]
 
-    return log_prob[n_index][2] + out_of_gg_clade + out_of_sg_clade
+    if is_sn_gn_same
+      return log_prob[n_index][2] + out_of_gg_clade + p12
+    else
+      return log_prob[n_index][1] + out_of_gg_clade + p11
+    end
   end # end of method
 
 
@@ -513,9 +555,16 @@ class InferHist
       end
 
       state_at_leaf = @pp.profiles[@pp.symbol2index[g]][num]
-      cost_vec[num][0] = cost_m[0][state_at_leaf]
-      cost_vec[num][1] = cost_m[1][state_at_leaf]
-      cost_vec[num][2] = cost_m[2][state_at_leaf]
+
+      if state_at_leaf != 3
+        cost_vec[num][0] = cost_m[0][state_at_leaf]
+        cost_vec[num][1] = cost_m[1][state_at_leaf]
+        cost_vec[num][2] = cost_m[2][state_at_leaf]
+      else
+        cost_vec[num][0] = cost_m[0][1]
+        cost_vec[num][1] = cost_m[1][1]
+        cost_vec[num][2] = cost_m[2][2]
+      end
 
       anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
       chd_index = @pt.which_child[node]
@@ -645,7 +694,7 @@ class InferHist
       #if gene_gain_node == node || @pt.tree.descendents(gene_gain_node, root=@pt.root).include?(node)
       if @pt.same_sub_tree[gene_gain_node][node]
         prob = marginal_ML(g, @gain_branch[g], node)
-        STDERR.puts "DEBUG: #{g} #{prob} #{node.name}"
+        #STDERR.puts "DEBUG: #{g} #{prob} #{node.name} #{@gain_branch[g]==node} #{node==@pt.root}"
         if prob > max
           max = prob
           signal_gain_node = node
@@ -710,7 +759,7 @@ class InferHist
            [log(gl), log(sl),   log(1-sl-gl)]
           ]
 
-    if @hidden_samp[i][0] == nil
+    if @hidden_samp[i].uniq.size == 1 && @hidden_samp[i].uniq[0] == nil
       # in case of first round
       (0..@N-1).each do |j|
         t_mat[j] = t_m
@@ -720,16 +769,15 @@ class InferHist
       end
     else
       # estimate branch specific parameter
+
       @pt.sorted_nodes.each_with_index { |node, num|
         if num >= @N-1
           break
         end
 
-        if !@pt.same_sub_tree[gg][node]
+        if !@pt.same_sub_tree[gg][node] || node == gg
           next
-        #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
         else
-          #if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
           if !@pt.same_sub_tree[sg][node]
             # non-mts region
             count = Array.new(2).map{ Array.new(2,0) }
@@ -795,9 +843,15 @@ class InferHist
       node  = @pt.sorted_nodes[num]
       state = @pp.profiles[@pp.symbol2index[g]][num]
 
-      log_prob_near_leaves[num][0] = prob_pred_error[0][state]
-      log_prob_near_leaves[num][1] = prob_pred_error[1][state]
-      log_prob_near_leaves[num][2] = prob_pred_error[2][state]
+      if state != 3
+        log_prob_near_leaves[num][0] = prob_pred_error[0][state]
+        log_prob_near_leaves[num][1] = prob_pred_error[1][state]
+        log_prob_near_leaves[num][2] = prob_pred_error[2][state]
+      else
+        log_prob_near_leaves[num][0] = prob_pred_error[0][1]
+        log_prob_near_leaves[num][1] = prob_pred_error[1][1]
+        log_prob_near_leaves[num][2] = prob_pred_error[2][2]
+      end
     }
 
     n_index = @pt.sorted_nodes.index(gg)
@@ -811,10 +865,6 @@ class InferHist
       #if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
       if !@pt.same_sub_tree[gg][node]
         next
-      #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
-      #  if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
-      #    next
-      #  end
       end
 
       log_prob[num][0] = log_prob_near_leaves[num][0] + log_prob_from_leaves[num][0][0] + log_prob_from_leaves[num][1][0]
@@ -824,28 +874,6 @@ class InferHist
       anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
       chd_index = @pt.which_child[node]
 
-=begin
-      log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp(
-                                                                        t_mat[num][0][0]+log_backward_from_parent[num][0],
-                                                                        t_mat[num][0][1]+log_backward_from_parent[num][1], false)
-      log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp(
-                                                                        log_prob_from_leaves[anc_index][chd_index][0],
-                                                                        t_mat[num][0][2]+log_backward_from_parent[num][2], false)
-
-      log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp(
-                                                                        t_mat[num][1][0]+log_backward_from_parent[num][0],
-                                                                        t_mat[num][1][1]+log_backward_from_parent[num][1], false)
-      log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp(
-                                                                        log_prob_from_leaves[anc_index][chd_index][1],
-                                                                        t_mat[num][1][2]+log_backward_from_parent[num][2], false)
-
-      log_prob_from_leaves[anc_index][chd_index][2] = Utils.log_sum_exp(
-                                                                        t_mat[num][2][0]+log_backward_from_parent[num][0],
-                                                                        t_mat[num][2][1]+log_backward_from_parent[num][1], false)
-      log_prob_from_leaves[anc_index][chd_index][2] = Utils.log_sum_exp(
-                                                                        log_prob_from_leaves[anc_index][chd_index][2],
-                                                                        t_mat[num][2][2]+log_backward_from_parent[num][2], false)
-=end
       log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp3(
                                                                         t_mat[num][0][0]+log_prob[num][0],
                                                                         t_mat[num][0][1]+log_prob[num][1],
@@ -878,8 +906,6 @@ class InferHist
       log_backward[n_index][2] = 0
     end
 
-
-
     last_index = @pt.sorted_nodes.size-1
     last_index.downto(0) {|num|
 
@@ -889,45 +915,11 @@ class InferHist
 
       node = @pt.sorted_nodes[num]
 
-      #if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
       if !@pt.same_sub_tree[gg][node]
         next
-      #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
-      #  if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
-      #    next
-      #  end
       end
 
       if node != gg
-
-=begin
-        log_backward[num][0] = Utils.log_sum_exp(
-                                                 t_mat[num][0][0]+log_backward_from_parent[num][0],
-                                                 t_mat[num][1][0]+log_backward_from_parent[num][1],
-                                                 false)
-        log_backward[num][0] = Utils.log_sum_exp(
-                                                 log_backward[num][0],
-                                                 t_mat[num][2][0]+log_backward_from_parent[num][2],
-                                                 false)
-
-        log_backward[num][1] = Utils.log_sum_exp(
-                                                 t_mat[num][0][1]+log_backward_from_parent[num][0],
-                                                 t_mat[num][1][1]+log_backward_from_parent[num][1],
-                                                 false)
-        log_backward[num][1] = Utils.log_sum_exp(
-                                                 log_backward[num][1],
-                                                 t_mat[num][2][1]+log_backward_from_parent[num][2],
-                                                 false)
-
-        log_backward[num][2] = Utils.log_sum_exp(
-                                                 t_mat[num][0][2]+log_backward_from_parent[num][0],
-                                                 t_mat[num][1][2]+log_backward_from_parent[num][1],
-                                                 false)
-        log_backward[num][2] = Utils.log_sum_exp(
-                                                 log_backward[num][2],
-                                                 t_mat[num][2][2]+log_backward_from_parent[num][2],
-                                                 false)
-=end
 
         log_backward[num][0] = Utils.log_sum_exp3(
                                                   t_mat[num][0][0]+log_backward_from_parent[num][0],
@@ -992,49 +984,17 @@ class InferHist
 
     }
 
-    @pt.sorted_nodes.reverse.each_with_index { |node, num|
+    @pt.sorted_nodes.reverse.each { |node|
+
+      num = @pt.sorted_nodes.index(node)
 
       if num > @pt.n_s-1
         next
       end
       
-      #if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
       if !@pt.same_sub_tree[gg][node]
         next
-      #elsif gg == node || @pt.tree.descendents(gg, root=@pt.root).include?(node)
-      #  if sg != node && !@pt.tree.descendents(sg, root=@pt.root).include?(node)
-      #    next
-      #  end
       end
-
-=begin
-      log_backward[num][0] = Utils.log_sum_exp(
-                                               t_mat[num][0][0]+log_backward_from_parent[num][0],
-                                               t_mat[num][1][0]+log_backward_from_parent[num][1],
-                                               false)
-      log_backward[num][0] = Utils.log_sum_exp(
-                                               log_backward[num][0],
-                                               t_mat[num][2][0]+log_backward_from_parent[num][2],
-                                               false)
-
-      log_backward[num][1] = Utils.log_sum_exp(
-                                               t_mat[num][0][1]+log_backward_from_parent[num][0],
-                                               t_mat[num][1][1]+log_backward_from_parent[num][1],
-                                               false)
-      log_backward[num][1] = Utils.log_sum_exp(
-                                               log_backward[num][1],
-                                               t_mat[num][2][1]+log_backward_from_parent[num][2],
-                                               false)
-
-      log_backward[num][2] = Utils.log_sum_exp(
-                                               t_mat[num][0][2]+log_backward_from_parent[num][0],
-                                               t_mat[num][1][2]+log_backward_from_parent[num][1],
-                                               false)
-      log_backward[num][2] = Utils.log_sum_exp(
-                                               log_backward[num][2],
-                                               t_mat[num][2][2]+log_backward_from_parent[num][2],
-                                               false)
-=end
 
       log_backward[num][0] = Utils.log_sum_exp3(
                                                 t_mat[num][0][0]+log_backward_from_parent[num][0],
@@ -1099,7 +1059,6 @@ class InferHist
       node  = @pt.sorted_nodes[num]
       state = @pp.profiles[@pp.symbol2index[g]][num] > 0 ? 1 : 0
 
-      #if n != node && !@pt.tree.descendents(n, root=@pt.root).include?(node)
       if !@pt.same_sub_tree[n][node]
         out_of_clade += prob_pred_error[0][state]
         next
@@ -1115,7 +1074,6 @@ class InferHist
         break
       end
 
-      #if n != node && !@pt.tree.descendents(n, root=@pt.root).include?(node)
       if !@pt.same_sub_tree[n][node]
         next
       end
