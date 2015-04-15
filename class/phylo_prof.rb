@@ -39,6 +39,9 @@ class PhyloProf
     }
   end
 
+  # 2015/4/15
+  # add a new internal state 3 as treating missing data.
+  # 3 = 1+2, so this is for fragmental seqs, namely starts with non-M.
   def swap_rows(pt = phylo_tree)
     # maybe due to the reference, initialize and accessing with k and j broke array..
     # generates temp and copy its reference after each iteration is required..
@@ -61,8 +64,11 @@ class PhyloProf
           temp[i] = 1
         elsif array[j] == '2'
           temp[i] = 2
+        elsif array[j] == '3'
+          temp[i] = 3
         else
-          STDERR.puts "Error: unexpected number for state #{array[j]}"
+          STDERR.puts "Error: unexpected number for a state #{array[j]} in #{node.name}"
+          exit 1
         end
       end
       _profiles[k] = temp
