@@ -36,8 +36,8 @@ class InferHist
     # parameters of prior for 54.
     @a   = 0.02625 # beta
     @b   = 0.12375 # beta
-    @al1 = 0.003   # dirichlet
-    @al2 = 0.005   # dirichlet
+    @al1 = 0.02404 # dirichlet
+    @al2 = 0.01332 # dirichlet
     @al3 = 0.100   # dirichlet
 
     # container for mcmc samples (init will be conducted in mcmc method)
@@ -238,7 +238,11 @@ class InferHist
       state = @pp.profiles[@pp.symbol2index[g]][num]
 
       if !@pt.same_sub_tree[gn][node]
-        out_of_gg_clade += prob_pred_error[0][state]
+        if state == 3
+          out_of_gg_clade += prob_pred_error[0][1]
+        else
+          out_of_gg_clade += prob_pred_error[0][state]
+        end
         next
       #else
       # 2015/4/13
@@ -679,7 +683,7 @@ class InferHist
       end
     end
     
-    puts "MAX log likelihood: #{max} for\t#{g}\t#{@pt.node2num[gain_node]}"
+    #puts "MAX log likelihood: #{max} for\t#{g}\t#{@pt.node2num[gain_node]}"
     @gain_branch[g] = gain_node
 
   end
@@ -702,7 +706,8 @@ class InferHist
       end
     end
     
-    puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}"
+    puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}" if signal_gain_node == @pt.root
+    #puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}"
     @signal_gain_branch[g] = signal_gain_node
 
   end
