@@ -12,11 +12,12 @@ class InferHist
 
   MAX     = 1e50
 
-  def initialize(pt = phylo_tree, pp = phylo_profile, input_genes)
+  def initialize(pt = phylo_tree, pp = phylo_profile, input_genes, ncore)
     @pt          = pt
     @pp          = pp
     @N           = 2*@pt.n_s-1
     @input_genes = input_genes   # this is an array which stores the names of the target genes
+    @ncore       = ncore # this is the number of parallelization. I prefer max - 2.
     @is_clade    = Array.new(@N).map{ Array.new(@N) }
     @null_m      = [
                     [log(1), log(0)],
@@ -27,18 +28,18 @@ class InferHist
     @hidden_samp = Array.new(input_genes.size).map{ Array.new(@N, nil) }
 
     # parameters of prior for YGOB.
-    #@a   = 0.0045 # beta
-    #@b   = 0.1455 # beta
-    #@al1 = 0.003   # dirichlet
-    #@al2 = 0.005   # dirichlet
-    #@al3 = 0.100   # dirichlet
+    @a   = 0.0045 # beta
+    @b   = 0.1455 # beta
+    @al1 = 0.003   # dirichlet
+    @al2 = 0.005   # dirichlet
+    @al3 = 0.100   # dirichlet
 
     # parameters of prior for 54.
-    @a   = 0.02625 # beta
-    @b   = 0.12375 # beta
-    @al1 = 0.02404 # dirichlet
-    @al2 = 0.01332 # dirichlet
-    @al3 = 0.100   # dirichlet
+    #@a   = 0.02 # beta
+    #@b   = 0.04 # beta
+    #@al1 = 0.02 # dirichlet
+    #@al2 = 0.02 # dirichlet
+    #@al3 = 0.02 # dirichlet
 
     # container for mcmc samples (init will be conducted in mcmc method)
     @state_cont = nil
@@ -57,15 +58,102 @@ class InferHist
   end
 
   def pre_process
-    # estimate gain of one property
 
+    # parallel version
+    results = Parallel.map(@input_genes, in_processes: @ncore) do |gene|
+      calc_gene_gain_org(gene)
+    end
+    results.each do |array|
+      @gain_branch[array[0]] = @pt.sorted_nodes[array[1]]
+    end
+
+    results = []
+
+    results = Parallel.map(@input_genes, in_processes: @ncore) do |gene|
+      calc_signal_gain_org(gene)
+    end
+    results.each do |array|
+      @signal_gain_branch[array[0]] = @pt.sorted_nodes[array[1]]
+    end
+
+    # estimate gain of one property
+=begin
     @input_genes.each do |gene|
+      # for MCMC
       calc_gene_gain_org(gene)
       calc_signal_gain_org(gene)
 
       #joint_ML(gene)
       #maximum_parsimony(gene)
     end
+=end
+  end
+
+  # 2015/7/9
+  # since sampling method was changed, output method has to be changed.
+  def pretty_output_process(total, burn_in, gn = gene_name, param_cont, state_cont)
+    # memo: @state_cont[gene num][update][branch num]
+    #       @param_cont[gene num][update][branch num]->[P10,P20,P21] in log
+
+    if total - burn_in < 0
+      STDERR.puts "Error: burn in step is too large."
+      return
+    end
+
+    smp_size = (total-burn_in).to_f
+
+    state_count = Array.new(@N).map{ Array.new(3,0) }
+    param_sum   = Array.new(@N).map{ Array.new(3,0) }
+
+    (burn_in..state_cont.size-1).each do |itr|
+      state_cont[itr].each_with_index do |state, num|
+        if @pt.same_sub_tree[@gain_branch[gn]][@pt.num2node[num]]
+          state_count[num][state] += 1
+        end
+      end
+
+      param_cont[itr].each_with_index do |array, num|
+        if @pt.same_sub_tree[@gain_branch[gn]][@pt.num2node[num]]
+          param_sum[num][0] = Utils.log_sum_exp_c(param_sum[num][0], array[0])
+          param_sum[num][1] = Utils.log_sum_exp_c(param_sum[num][1], array[1])
+          param_sum[num][2] = Utils.log_sum_exp_c(param_sum[num][2], array[2])
+        end
+      end
+
+      #puts ''
+    end
+
+    print "#{gn}\t"
+    (0..@N-1).each do |num|
+
+      if !@pt.same_sub_tree[@gain_branch[gn]][@pt.num2node[num]]
+        print "-, -, -"
+        print "\t"
+      else
+        hidden_states[num][0] = state_count[num][0].to_f/smp_size
+        hidden_states[num][1] = state_count[num][1].to_f/smp_size
+        hidden_states[num][2] = state_count[num][2].to_f/smp_size
+        printf("%.2f, %.2f, %.2f", state_count[num][0].to_f/smp_size, state_count[num][1].to_f/smp_size, state_count[num][2].to_f/smp_size)
+        print "\t"
+      end
+    end
+    puts ''
+
+    print "#{gn}\t"
+    (0..@N-1).each do |num|
+
+      if !@pt.same_sub_tree[@gain_branch[gn]][@pt.num2node[num]]
+        print "-, -, -"
+        print "\t"
+      else
+        branch_params[num][0] = exp(param_sum[num][0])/smp_size #p10
+        branch_params[num][1] = exp(param_sum[num][1])/smp_size #p20
+        branch_params[num][2] = exp(param_sum[num][2])/smp_size #p21
+        printf("%.2f, %.2f, %.2f", exp(param_sum[num][0])/smp_size, exp(param_sum[num][1])/smp_size, exp(param_sum[num][2])/smp_size)
+        print "\t"
+      end
+    end
+    puts ''
   end
 
   def pretty_output(total, burn_in)
@@ -148,30 +236,37 @@ class InferHist
     # to get more randomized number, declaration must be done outside of sampling method.
     r = GSL::Rng.alloc(GSL::Rng::MT19937, GSL::Rng.default_seed)
 
-    @state_cont = Array.new(@input_genes.size).map{
-      Array.new(total).map{
-        Array.new(@N)
-      }
-    }
-
-    # the num of parameters are three, namely P10, P21, P20.
-    @param_cont = Array.new(@input_genes.size).map{
-      Array.new(total).map{
-        Array.new(@N).map{
-          Array.new(3,0)
+    if(false)
+      @state_cont = Array.new(@input_genes.size).map{
+        Array.new(total).map{
+          Array.new(@N)
         }
       }
-    }
 
-    (0..total-1).each do |itr|
-      #STDERR.flush
-      STDERR.puts "Running..#{itr}" if(itr % 100 == 0)
+      # the num of parameters are three, namely P10, P21, P20.
+      @param_cont = Array.new(@input_genes.size).map{
+        Array.new(total).map{
+          Array.new(@N).map{
+            Array.new(3,0)
+          }
+        }
+      }
+
+      (0..total-1).each do |itr|
+        #STDERR.flush
+        STDERR.puts "Running..#{itr}" if(itr % 100 == 0)
+        @input_genes.each_with_index do |gene, i|
+          sampling_state(i, gene, r, itr)
+        end
+      end
+
+      pretty_output(total, burn_in)
+
+    else
       @input_genes.each_with_index do |gene, i|
-        sampling_state(i, gene, r, itr)
+        sampling_state_process(i, gene, r, total, burn_in)
       end
     end
-
-    pretty_output(total, burn_in)
 
   end
 
@@ -196,12 +291,21 @@ class InferHist
     # flag for if signal gain node is as same as the gene gain node?
     is_sn_gn_same = false
 
-    ### YGOB ###
+    ### YGOB MTS ###
     #sg    = 0.0072 # signal gain, global
     #sg    = 0.0830 # signal gain, mts annotated
     #sl    = 0.07554 # signal loss, global
     #sl    = 0.05692 # signal loss, mts annotated
     #gl    = 0.02    # gene loss
+
+    ### YGOB SP ###
+    #sg    = 0.00203 # signal gain, global
+    #sg    = 0.10143 # signal gain, sp annotated
+    #sl    = 0.05251 # signal loss, global
+    #sl    = 0.04116 # signal loss, SP annotated
+    #gl    = 0.02184 # gene loss, global
+    #gl    = 0.03241 # gene loss
+
 
     ### 54 euk ###
     sg    = 0.01  # signal gain, mitochondrial
@@ -210,7 +314,9 @@ class InferHist
 
     ### Error rate ###
     eps   = 0.01
-    eps_m = 0.08
+    #eps_m = 0.08 # MitoFates
+    eps_m = 0.022 # SignalP FN rate=0.033, FP rate=0.011, so balancing 0.022
+    
 
     prob_pred_error = [
                        [log(1-eps), log(eps/2),         log(eps/2)],
@@ -528,16 +634,16 @@ class InferHist
     #          [1,0]]
 
     # considering gene loss model but assume no regaining of a gene
-    #cost_m = [
-    #          [0,MAX,MAX],
-    #          [1,0,1],
-    #          [1,1,0]]
-
-    # considering gene loss model without any assumption
     cost_m = [
-              [0,1,1],
+              [0,MAX,MAX],
               [1,0,1],
               [1,1,0]]
+
+    # considering gene loss model without any assumption
+    #cost_m = [
+    #          [0,1,1],
+    #          [1,0,1],
+    #          [1,1,0]]
 
     # counter for transition event
     counter = Array.new(3).map{ Array.new(3,0) }
@@ -685,13 +791,14 @@ class InferHist
     
     #puts "MAX log likelihood: #{max} for\t#{g}\t#{@pt.node2num[gain_node]}"
     @gain_branch[g] = gain_node
-
+    return [g, @pt.node2num[gain_node]]
   end
 
   def calc_signal_gain_org(g = gene)
     max = log(0)
     signal_gain_node = nil
     gene_gain_node   = @gain_branch[g]
+    #p @gain_branch[g]
     # tentatively, assume one gaining.
     # loop with all nodes.
     @pt.sorted_nodes.each do |node|
@@ -706,9 +813,376 @@ class InferHist
       end
     end
     
-    puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}" if signal_gain_node == @pt.root
+    #puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}" if signal_gain_node == @pt.root
     #puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}"
+
     @signal_gain_branch[g] = signal_gain_node
+    return [g, @pt.node2num[signal_gain_node]]
+  end
+
+  # 2015/7/9
+  # to parallelize sampling method, memory management is a source of headach.
+  # Since there is currently no reason to loop gene inside of mcmc step, move outside loop to the 
+  #  inside of method to avoid troublesome memory management.
+  # Kept previous method for future use.
+  def sampling_state_process(i = input_index, g = gene, r, total, burn_in)
+    gg = @gain_branch[g]
+    sg = @signal_gain_branch[g]
+
+    if !gg || !sg
+      STDERR.puts "Error: gene gain or/and signal gain have not been estimated."
+      return
+    end
+
+    ##### changed some vars from instance var to local var with reducing gene_num dimension.
+    hidden_samp = Array.new(total).map{
+      Array.new(@N, nil)
+    }
+
+    state_cont  = Array.new(total).map{
+      Array.new(@N)
+    }
+
+    # the num of parameters are three, namely P10, P21, P20.
+    param_cont = Array.new(total).map{
+      Array.new(@N).map{
+        Array.new(3,0)
+      }
+    }
+
+    prev_t_mat = nil
+
+    #####
+
+    # below var contains branch specific transition params for each input gene
+    t_mat = Array.new(total).map{
+      Array.new(@N).map{
+        Array.new(3).map{
+          Array.new(3, log(0))
+        }
+      }
+    }
+
+    ### YGOB ###
+    #sg    = 0.0072 # signal gain, global
+    #sg    = 0.0830 # signal gain, mts annotated
+    #sl    = 0.07554 # signal loss, global
+    #sl    = 0.05692 # signal loss, mts annotated
+    #gl    = 0.02    # gene loss
+
+    ### 54 euk ###
+    # initial value. Tentatively, use uniform dist for three states
+    sl    = 0.097
+    gl    = 0.175
+
+    ### Error rate ###
+    eps   = 0.01
+    eps_m = 0.08
+
+    prob_pred_error = [
+                       [log(1-eps), log(eps/2),         log(eps/2)],
+                       [log(eps/2), log(1-eps_m-eps/2), log(eps_m)],
+                       [log(eps/2), log(eps_m),         log(1-eps_m-eps/2)]
+                      ]
+
+    t_m = [
+           [log(1),  log(0),    log(0)],
+           [log(gl), log(1-gl), log(0)],
+           [log(gl), log(sl),   log(1-sl-gl)]
+          ]
+
+    # begin of gibbs sampling
+    (0..total-1).each do |it|
+      # memo for me-> Ruby assings same reference with such declarations:
+      #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
+      #   Confirm not to declare with above style in ruby when using multi-D array.
+      log_prob_from_leaves     = Array.new(@N).map{ Array.new(2).map{ Array.new(3, 0) }}
+      log_prob_near_leaves     = Array.new(@N).map{ Array.new(3,0) }
+      log_prob                 = Array.new(@N).map{ Array.new(3,0) }
+      log_backward             = Array.new(@N).map{ Array.new(3,0) }
+      log_backward_from_parent = Array.new(@N).map{ Array.new(3,0) }
+
+      #if hidden_samp.uniq.size == 1 && hidden_samp.uniq[0] == nil
+      if it == 0
+        # in case of first round
+        (0..@N-1).each do |j|
+          t_mat[it][j] = t_m
+          param_cont[it][j][0] = t_mat[it][j][1][0]
+          param_cont[it][j][1] = t_mat[it][j][2][0]
+          param_cont[it][j][2] = t_mat[it][j][2][1]
+        end
+      else
+        # estimate branch specific parameter
+
+        @pt.sorted_nodes.each_with_index { |node, num|
+          if num >= @N-1
+            break
+          end
+
+          if !@pt.same_sub_tree[gg][node] || node == gg
+            next
+          else
+            if !@pt.same_sub_tree[sg][node]
+              # non-mts region
+              count = Array.new(2).map{ Array.new(2,0) }
+              anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
+
+              count[hidden_samp[it-1][anc_index]][hidden_samp[it-1][num]] += 1
+
+              # sampling from beta
+              theta_non = r.beta(@a+count[1][0], @b+count[1][1])
+
+              t_mat[it][num][0][0] = 0
+              t_mat[it][num][1][0] = log(theta_non)
+              t_mat[it][num][1][1] = log(1 - theta_non)
+              t_mat[it][num][1][2] = log(0)
+              t_mat[it][num][2][0] = log(0)
+              t_mat[it][num][2][1] = log(0)
+              t_mat[it][num][2][2] = log(0)
+
+              param_cont[it][num][0] = t_mat[it][num][1][0]
+              param_cont[it][num][1] = t_mat[it][num][2][0]
+              param_cont[it][num][2] = t_mat[it][num][2][1]
+
+            else
+              # mts region
+              count = Array.new(3).map{ Array.new(3,0) }
+              anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
+
+              count[hidden_samp[it-1][anc_index]][hidden_samp[it-1][num]] += 1
+
+              # sampling from beta
+              theta_non = r.beta(@a+count[1][0], @b+count[1][1])
+              # sampling from dirichlet
+              obs = GSL::Vector.alloc(@al1+count[2][0],@al2+count[2][1], @al3+count[2][2])
+              theta_mts = r.dirichlet(obs).to_a
+
+              t_mat[it][num][0][0] = 0
+              t_mat[it][num][1][0] = log(theta_non)
+              t_mat[it][num][1][1] = log(1 - theta_non)
+              t_mat[it][num][1][2] = log(0)
+              t_mat[it][num][2][0] = log(theta_mts[0])
+              t_mat[it][num][2][1] = log(theta_mts[1])
+              t_mat[it][num][2][2] = log(theta_mts[2])
+
+              #t_mat[num][2][0] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
+              #t_mat[num][2][1] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
+              #t_mat[num][2][2] = log(1 - exp(t_mat[num][2][0]) - exp(t_mat[num][2][1]))
+
+              param_cont[it][num][0] = t_mat[it][num][1][0]
+              param_cont[it][num][1] = t_mat[it][num][2][0]
+              param_cont[it][num][2] = t_mat[it][num][2][1]
+
+            end
+          end
+        } # end of each
+
+      end # end of if
+
+      #prev_t_mat = t_mat
+
+      # quantitate fluctuation of observed states by pre-calculated performance.
+      (0..@pt.n_s-1).each{ |num|
+
+        node  = @pt.sorted_nodes[num]
+        state = @pp.profiles[@pp.symbol2index[g]][num]
+
+        if state != 3
+          log_prob_near_leaves[num][0] = prob_pred_error[0][state]
+          log_prob_near_leaves[num][1] = prob_pred_error[1][state]
+          log_prob_near_leaves[num][2] = prob_pred_error[2][state]
+        else
+          log_prob_near_leaves[num][0] = prob_pred_error[0][1]
+          log_prob_near_leaves[num][1] = prob_pred_error[1][1]
+          log_prob_near_leaves[num][2] = prob_pred_error[2][2]
+        end
+      }
+
+      n_index = @pt.sorted_nodes.index(gg)
+      s_index = @pt.sorted_nodes.index(sg)
+
+      @pt.sorted_nodes.each_with_index { |node, num|
+        if num >= n_index
+          break
+        end
+
+        #if gg != node && !@pt.tree.descendents(gg, root=@pt.root).include?(node)
+        if !@pt.same_sub_tree[gg][node]
+          next
+        end
+
+        log_prob[num][0] = log_prob_near_leaves[num][0] + log_prob_from_leaves[num][0][0] + log_prob_from_leaves[num][1][0]
+        log_prob[num][1] = log_prob_near_leaves[num][1] + log_prob_from_leaves[num][0][1] + log_prob_from_leaves[num][1][1]
+        log_prob[num][2] = log_prob_near_leaves[num][2] + log_prob_from_leaves[num][0][2] + log_prob_from_leaves[num][1][2]
+
+        anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
+        chd_index = @pt.which_child[node]
+
+        log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp3(
+                                                                           t_mat[it][num][0][0]+log_prob[num][0],
+                                                                           t_mat[it][num][0][1]+log_prob[num][1],
+                                                                           t_mat[it][num][0][2]+log_prob[num][2])
+
+        log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp3(
+                                                                           t_mat[it][num][1][0]+log_prob[num][0],
+                                                                           t_mat[it][num][1][1]+log_prob[num][1],
+                                                                           t_mat[it][num][1][2]+log_prob[num][2])
+
+        log_prob_from_leaves[anc_index][chd_index][2] = Utils.log_sum_exp3(
+                                                                           t_mat[it][num][2][0]+log_prob[num][0],
+                                                                           t_mat[it][num][2][1]+log_prob[num][1],
+                                                                           t_mat[it][num][2][2]+log_prob[num][2])
+
+      }
+
+      #puts log_prob[n_index].join("\t")
+
+      log_prob[n_index][0] = log_prob_from_leaves[n_index][0][0] + log_prob_from_leaves[n_index][1][0]
+      log_prob[n_index][1] = log_prob_from_leaves[n_index][0][1] + log_prob_from_leaves[n_index][1][1]
+      log_prob[n_index][2] = log_prob_from_leaves[n_index][0][2] + log_prob_from_leaves[n_index][1][2]
+
+      log_backward[n_index][0] = log(0)
+      log_backward[n_index][1] = 0
+      log_backward[n_index][2] = log(0)
+
+      # enforcely determine gg state and sg state
+      # if n_index != s_index, set later on. (if we set 0 here, it'll be overwritten after all later).
+      if n_index == s_index
+        log_backward[n_index][1] = log(0)
+        log_backward[n_index][2] = 0
+      end
+
+      last_index = @pt.sorted_nodes.size-1
+      last_index.downto(0) {|num|
+
+        if num <= @pt.n_s-1
+          break
+        end
+
+        node = @pt.sorted_nodes[num]
+
+        if !@pt.same_sub_tree[gg][node]
+          next
+        end
+
+        if node != gg
+
+          log_backward[num][0] = Utils.log_sum_exp3(
+                                                    t_mat[it][num][0][0]+log_backward_from_parent[num][0],
+                                                    t_mat[it][num][1][0]+log_backward_from_parent[num][1],
+                                                    t_mat[it][num][2][0]+log_backward_from_parent[num][2]
+                                                    )
+
+          log_backward[num][1] = Utils.log_sum_exp3(
+                                                    t_mat[it][num][0][1]+log_backward_from_parent[num][0],
+                                                    t_mat[it][num][1][1]+log_backward_from_parent[num][1],
+                                                    t_mat[it][num][2][1]+log_backward_from_parent[num][2]
+                                                    )
+
+          log_backward[num][2] = Utils.log_sum_exp3(
+                                                    t_mat[it][num][0][2]+log_backward_from_parent[num][0],
+                                                    t_mat[it][num][1][2]+log_backward_from_parent[num][1],
+                                                    t_mat[it][num][2][2]+log_backward_from_parent[num][2]
+                                                    )
+
+        end
+
+        # if current node is estimated signal gain node, set prob 1 enforcely
+        # Although P(state at node == mts|parent state) != 1, below should work.
+        if node == sg
+          log_backward[num][0] = log(0)
+          log_backward[num][1] = log(0)
+          log_backward[num][2] = 0
+        end
+
+        l1 = log_backward[num][0] + log_prob[num][0]
+        l2 = log_backward[num][1] + log_prob[num][1]
+        l3 = log_backward[num][2] + log_prob[num][2]
+
+        if l1.nan? || l2.nan? || l3.nan?
+          STDERR.puts "#{num}: #{l1}, #{l2}, #{l3}. Anc."
+          p log_backward_from_parent[num]
+          p t_mat[num]
+          exit 1
+        else
+          state = Utils.sample_three_probs(l1, l2, l3)
+        end
+
+        hidden_samp[it][num] = state
+        state_cont[it][num] = state
+
+        log_prob_near_leaves[num][0]     = log(0)
+        log_prob_near_leaves[num][1]     = log(0)
+        log_prob_near_leaves[num][2]     = log(0)
+        log_prob_near_leaves[num][state] = 0
+
+        @pt.tree.children(node, root=@pt.root).each do |child|
+          if child == @pt.tree.root
+            next
+          end
+
+          chd_index = @pt.node2num[child]
+
+          log_backward_from_parent[chd_index][0] = log_prob_near_leaves[num][0]
+          log_backward_from_parent[chd_index][1] = log_prob_near_leaves[num][1]
+          log_backward_from_parent[chd_index][2] = log_prob_near_leaves[num][2]
+        end
+
+      }
+
+      @pt.sorted_nodes.reverse.each { |node|
+
+        num = @pt.sorted_nodes.index(node)
+
+        if num > @pt.n_s-1
+          next
+        end
+        
+        if !@pt.same_sub_tree[gg][node]
+          next
+        end
+
+        log_backward[num][0] = Utils.log_sum_exp3(
+                                                  t_mat[it][num][0][0]+log_backward_from_parent[num][0],
+                                                  t_mat[it][num][1][0]+log_backward_from_parent[num][1],
+                                                  t_mat[it][num][2][0]+log_backward_from_parent[num][2]
+                                                  )
+        
+        log_backward[num][1] = Utils.log_sum_exp3(
+                                                  t_mat[it][num][0][1]+log_backward_from_parent[num][0],
+                                                  t_mat[it][num][1][1]+log_backward_from_parent[num][1],
+                                                  t_mat[it][num][2][1]+log_backward_from_parent[num][2]
+                                                  )
+
+        log_backward[num][2] = Utils.log_sum_exp3(
+                                                  t_mat[it][num][0][2]+log_backward_from_parent[num][0],
+                                                  t_mat[it][num][1][2]+log_backward_from_parent[num][1],
+                                                  t_mat[it][num][2][2]+log_backward_from_parent[num][2]
+                                                  )
+
+        l1 = log_backward[num][0] + log_prob[num][0]
+        l2 = log_backward[num][1] + log_prob[num][1]
+        l3 = log_backward[num][2] + log_prob[num][2]
+
+        if l1.nan? || l2.nan? || l3.nan?
+          STDERR.puts "#{num}: #{l1}, #{l2}, #{l3}. leaf"
+          exit 1
+        else
+          state = Utils.sample_three_probs(l1, l2, l3)
+        end
+
+        hidden_samp[it][num] = state
+        state_cont[it][num] = state
+
+        log_prob_near_leaves[num][0]     = -1*MAX
+        log_prob_near_leaves[num][1]     = -1*MAX
+        log_prob_near_leaves[num][2]     = -1*MAX
+        log_prob_near_leaves[num][state] = 0
+      }
+    end # end of mcmc sampling
+
+    pretty_output_process(total, burn_in, g, param_cont, state_cont)
+    exit 0
 
   end
 
@@ -840,7 +1314,7 @@ class InferHist
 
     end # end of if
 
-    @prev_t_mat = t_mat
+    #@prev_t_mat = t_mat
 
     # quantitate fluctuation of observed states by pre-calculated performance.
     (0..@pt.n_s-1).each{ |num|
