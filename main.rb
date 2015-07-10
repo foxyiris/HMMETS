@@ -311,6 +311,11 @@ if __FILE__ == $0
   end
 =end
 
+  processor_count = Parallel.processor_count
+  use_multicore = true
+  if use_multicore
+    processor_count -= 2
+  end
 
   treeio = Bio::FlatFile.open(Bio::Newick, ARGV.shift)
   pp     = PhyloProf.new(ARGV.shift)
@@ -328,17 +333,20 @@ if __FILE__ == $0
   # debug data
   #input_genes = ["DUMMY"]
   #input_genes = ["YDR079W"]
+  #input_genes = ["2A5D_YEAST"]
 
   # MTS data
   #input_genes = ["YNL306W"]
   #input_genes = ["YDL069C"]
   #input_genes = ["YDL069C","YPR011C"]
   input_genes = pp.symbol2index.keys
-  ih = InferHist.new(pt, pp, input_genes)
+  ih = InferHist.new(pt, pp, input_genes, processor_count)
   ih.pre_process()
 
   #ih.mcmc(30000,3000)
-  ih.mcmc(30,6)
+  ih.mcmc(10000, 3000)
+
+  exit 0
 
   input_genes.each do |gene|
     taxon2prof = Hash.new()
@@ -354,8 +362,8 @@ if __FILE__ == $0
     #mp.render_file("figs_yeast_primitive_mts/#{gene}.pdf")
     #mp.render_file("figs/#{gene}.pdf")
     #mp.render_file("figs_yeast_rbh/#{gene}.pdf")
-    mp.render_file("test/#{gene}.pdf")
-    #mp.render_file("#{gene}.pdf")
+    #mp.render_file("test/#{gene}.pdf")
+    mp.render_file("#{gene}.pdf")
   end
 
   exit 0
