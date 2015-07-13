@@ -65,7 +65,11 @@ class Utils
 
     sigma_m = self.calc_var(batch_means)
 
-    return (sigma_m*m.to_i)/(self.calc_var(vals))
+    if self.calc_var(vals) == 0
+      return (sigma_m*m.to_i)/1e-10
+    else
+      return (sigma_m*m.to_i)/(self.calc_var(vals))
+    end
   end
 
   def self.calc_ess(vals)
