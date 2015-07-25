@@ -2,6 +2,7 @@ class InferHist
   require 'bundler'
   Bundler.require
   require('gsl')
+  require 'date'
 
   include Math
 
@@ -13,6 +14,7 @@ class InferHist
   MAX     = 1e50
 
   def initialize(pt = phylo_tree, pp = phylo_profile, input_genes, ncore)
+    @log_file    = "/home/yoshinori/MitoFates_MCMC/MitoFatesProb/log_" << Date::today.to_s << ".txt"
     @pt          = pt
     @pp          = pp
     @N           = 2*@pt.n_s-1
@@ -22,24 +24,24 @@ class InferHist
     @null_m      = [
                     [log(1), log(0)],
                     #[log(0.02), log(0.98)]
-                    [log(0.175), log(1-0.175)]
+                    [log(0.121), log(1-0.121)]
                    ]
     # below var contains sampled states at each node for each gene
     @hidden_samp = Array.new(input_genes.size).map{ Array.new(@N, nil) }
 
     # parameters of prior for YGOB.
-    @a   = 0.0045 # beta
-    @b   = 0.1455 # beta
-    @al1 = 0.003   # dirichlet
-    @al2 = 0.005   # dirichlet
-    @al3 = 0.100   # dirichlet
+    #@a   = 0.0045 # beta
+    #@b   = 0.1455 # beta
+    #@al1 = 0.003   # dirichlet
+    #@al2 = 0.005   # dirichlet
+    #@al3 = 0.100   # dirichlet
 
     # parameters of prior for 54.
-    #@a   = 0.02 # beta
-    #@b   = 0.04 # beta
-    #@al1 = 0.02 # dirichlet
-    #@al2 = 0.02 # dirichlet
-    #@al3 = 0.02 # dirichlet
+    @a   = 0.05 # beta
+    @b   = 0.1 # beta
+    @al1 = 0.05 # dirichlet
+    @al2 = 0.05 # dirichlet
+    @al3 = 0.05 # dirichlet
 
     # container for mcmc samples (init will be conducted in mcmc method)
     @state_cont = nil
@@ -69,13 +71,15 @@ class InferHist
 
     results = []
 
+=begin
     results = Parallel.map(@input_genes, in_processes: @ncore) do |gene|
-      calc_signal_gain_org(gene)
+      calc_signal_gain_org(gene, false)
+      #calc_signal_gain_org(gene, true)
     end
     results.each do |array|
       @signal_gain_branch[array[0]] = @pt.sorted_nodes[array[1]]
     end
-
+=end
     # estimate gain of one property
 =begin
     @input_genes.each do |gene|
@@ -100,15 +104,22 @@ class InferHist
       return
     end
 
+    output = File.open("/home/yoshinori/MitoFates_MCMC/MitoFatesProb/parallel_param_files/HOGE/#{gn}.csv", "w")
+
     smp_size = (total-burn_in).to_f
 
     state_count = Array.new(@N).map{ Array.new(3,0) }
     param_sum   = Array.new(@N).map{ Array.new(3,0) }
 
+    ess_state = Array.new(@N).map{ Array.new(state_cont.size - burn_in)}
+    ess_trans = Array.new(@N).map{ Array.new(3).map{ Array.new(state_cont.size - burn_in) } }
+    
+
     (burn_in..state_cont.size-1).each do |itr|
       state_cont[itr].each_with_index do |state, num|
         if @pt.same_sub_tree[@gain_branch[gn]][@pt.num2node[num]]
           state_count[num][state] += 1
+          ess_state[num][itr-burn_in] = state
         end
       end
 
@@ -117,43 +128,88 @@ class InferHist
           param_sum[num][0] = Utils.log_sum_exp_c(param_sum[num][0], array[0])
           param_sum[num][1] = Utils.log_sum_exp_c(param_sum[num][1], array[1])
           param_sum[num][2] = Utils.log_sum_exp_c(param_sum[num][2], array[2])
+
+          ess_trans[num][0][itr-burn_in] = array[0]
+          ess_trans[num][1][itr-burn_in] = array[1]
+          ess_trans[num][2][itr-burn_in] = array[2]
         end
       end
 
       #puts ''
     end
 
-    print "#{gn}\t"
+    output.print "#{gn}-state-ESS\t"
     (0..@N-1).each do |num|
 
       if !@pt.same_sub_tree[@gain_branch[gn]][@pt.num2node[num]]
-        print "-, -, -"
-        print "\t"
+        output.print "-"
+        output.print "\t"
+      else
+        ess = Utils.calc_ess(ess_state[num])
+        if ess > 100
+          output.print "-"
+        else
+          output.print ess.to_s
+        end
+        output.print "\t"
+      end
+    end
+    output.puts ''
+
+    output.print "#{gn}-Q-ESS\t"
+    (0..@N-1).each do |num|
+
+      if !@pt.same_sub_tree[@gain_branch[gn]][@pt.num2node[num]]
+        output.print "-,-,-"
+        output.print "\t"
+      else
+        str = []
+        (0..2).each do |i|
+          ess = Utils.calc_ess(ess_trans[num][i])
+          if ess > 100
+            str.push("-")
+          else
+            str.push("NG")
+          end
+        end
+        output.print str.join(",")
+        output.print "\t"
+      end
+    end
+    output.puts ''
+
+
+    output.print "#{gn}\t"
+    (0..@N-1).each do |num|
+
+      if !@pt.same_sub_tree[@gain_branch[gn]][@pt.num2node[num]]
+        output.print "-, -, -"
+        output.print "\t"
       else
         hidden_states[num][0] = state_count[num][0].to_f/smp_size
         hidden_states[num][1] = state_count[num][1].to_f/smp_size
         hidden_states[num][2] = state_count[num][2].to_f/smp_size
-        printf("%.2f, %.2f, %.2f", state_count[num][0].to_f/smp_size, state_count[num][1].to_f/smp_size, state_count[num][2].to_f/smp_size)
-        print "\t"
+        output.printf("%.3f, %.3f, %.3f", state_count[num][0].to_f/smp_size, state_count[num][1].to_f/smp_size, state_count[num][2].to_f/smp_size)
+        output.print "\t"
       end
     end
-    puts ''
+    output.puts ''
 
-    print "#{gn}\t"
+    output.print "#{gn}\t"
     (0..@N-1).each do |num|
 
       if !@pt.same_sub_tree[@gain_branch[gn]][@pt.num2node[num]]
-        print "-, -, -"
-        print "\t"
+        output.print "-, -, -"
+        output.print "\t"
       else
         branch_params[num][0] = exp(param_sum[num][0])/smp_size #p10
         branch_params[num][1] = exp(param_sum[num][1])/smp_size #p20
         branch_params[num][2] = exp(param_sum[num][2])/smp_size #p21
-        printf("%.2f, %.2f, %.2f", exp(param_sum[num][0])/smp_size, exp(param_sum[num][1])/smp_size, exp(param_sum[num][2])/smp_size)
-        print "\t"
+        output.printf("%.3f, %.3f, %.3f", exp(param_sum[num][0])/smp_size, exp(param_sum[num][1])/smp_size, exp(param_sum[num][2])/smp_size)
+        output.print "\t"
       end
     end
-    puts ''
+    output.puts ''
   end
 
   def pretty_output(total, burn_in)
@@ -263,8 +319,10 @@ class InferHist
       pretty_output(total, burn_in)
 
     else
-      @input_genes.each_with_index do |gene, i|
+      Parallel.map_with_index(@input_genes, in_processes: @ncore) do |gene, i|
+      #@input_genes.each_with_index do |gene, i|
         sampling_state_process(i, gene, r, total, burn_in)
+        puts "#{gene} finish."
       end
     end
 
@@ -276,7 +334,7 @@ class InferHist
 
   # 2015/4/15
   # Added a missing data state, 3, either non-MTS or MTS.
-  def marginal_ML(g = gene, gn = g_gain_node, sn = s_gain_node)
+  def marginal_ML(g = gene, gn = g_gain_node, sn = s_gain_node, mts_flag)
 
     # memo for me-> Ruby assings same reference with such declarations:
     #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
@@ -309,13 +367,22 @@ class InferHist
 
     ### 54 euk ###
     sg    = 0.01  # signal gain, mitochondrial
-    sl    = 0.097
-    gl    = 0.175
+    gl    = 0.121
+
+    if mts_flag
+      sl    = 0.175 # mts
+    else
+      sl    = 0.158 # sp
+    end
 
     ### Error rate ###
     eps   = 0.01
-    #eps_m = 0.08 # MitoFates
-    eps_m = 0.022 # SignalP FN rate=0.033, FP rate=0.011, so balancing 0.022
+
+    if mts_flag
+      eps_m = 0.08  # MitoFates
+    else
+      eps_m = 0.022 # SignalP FN rate=0.033, FP rate=0.011, so balancing 0.022
+    end
     
 
     prob_pred_error = [
@@ -789,12 +856,16 @@ class InferHist
       end
     end
     
-    #puts "MAX log likelihood: #{max} for\t#{g}\t#{@pt.node2num[gain_node]}"
+    open(@log_file, "a"){|f|
+      f.flock(File::LOCK_EX)
+      f.puts "MAX log likelihood: #{max} for\t#{g}\t#{@pt.node2num[gain_node]}"
+    }
+
     @gain_branch[g] = gain_node
     return [g, @pt.node2num[gain_node]]
   end
 
-  def calc_signal_gain_org(g = gene)
+  def calc_signal_gain_org(g = gene, flag = is_enforcely_root)
     max = log(0)
     signal_gain_node = nil
     gene_gain_node   = @gain_branch[g]
@@ -804,7 +875,7 @@ class InferHist
     @pt.sorted_nodes.each do |node|
       #if gene_gain_node == node || @pt.tree.descendents(gene_gain_node, root=@pt.root).include?(node)
       if @pt.same_sub_tree[gene_gain_node][node]
-        prob = marginal_ML(g, @gain_branch[g], node)
+        prob = marginal_ML(g, @gain_branch[g], node, false)
         #STDERR.puts "DEBUG: #{g} #{prob} #{node.name} #{@gain_branch[g]==node} #{node==@pt.root}"
         if prob > max
           max = prob
@@ -813,10 +884,19 @@ class InferHist
       end
     end
     
-    #puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}" if signal_gain_node == @pt.root
-    #puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}"
+    open(@log_file, "a"){|f|
+      f.flock(File::LOCK_EX)
+      #f.puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}" if signal_gain_node == @pt.root
+      f.puts "MAX log likelihood given gene gain node: #{max} for\t#{g}\t#{@pt.node2num[signal_gain_node]}"
+    }
 
-    @signal_gain_branch[g] = signal_gain_node
+    if flag
+      STDERR.puts "Enforce mode: #{@pt.node2num[@pt.root]}"
+      @signal_gain_branch[g] = @pt.sorted_nodes[@pt.node2num[@pt.root]]
+    else
+      @signal_gain_branch[g] = signal_gain_node
+    end
+
     return [g, @pt.node2num[signal_gain_node]]
   end
 
@@ -872,8 +952,10 @@ class InferHist
 
     ### 54 euk ###
     # initial value. Tentatively, use uniform dist for three states
-    sl    = 0.097
-    gl    = 0.175
+    #sl    = 0.097
+    #gl    = 0.175
+    sl    = 0.33
+    gl    = 0.33
 
     ### Error rate ###
     eps   = 0.01
@@ -1182,8 +1264,6 @@ class InferHist
     end # end of mcmc sampling
 
     pretty_output_process(total, burn_in, g, param_cont, state_cont)
-    exit 0
-
   end
 
   def sampling_state(i = input_index, g = gene, r = rng, it = itr)
@@ -1219,8 +1299,10 @@ class InferHist
     #gl    = 0.02    # gene loss
 
     ### 54 euk ###
-    sl    = 0.097
-    gl    = 0.175
+    #sl    = 0.097
+    #gl    = 0.175
+    sl    = 0.333
+    gl    = 0.333
 
     ### Error rate ###
     eps   = 0.01
