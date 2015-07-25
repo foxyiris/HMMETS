@@ -71,15 +71,18 @@ class InferHist
 
     results = []
 
-=begin
     results = Parallel.map(@input_genes, in_processes: @ncore) do |gene|
       calc_signal_gain_org(gene, false)
       #calc_signal_gain_org(gene, true)
     end
     results.each do |array|
-      @signal_gain_branch[array[0]] = @pt.sorted_nodes[array[1]]
+      if array[1]
+        @signal_gain_branch[array[0]] = @pt.sorted_nodes[array[1]]
+      else
+        @signal_gain_branch[array[0]] = nil
+      end
     end
-=end
+
     # estimate gain of one property
 =begin
     @input_genes.each do |gene|
@@ -114,6 +117,11 @@ class InferHist
     ess_state = Array.new(@N).map{ Array.new(state_cont.size - burn_in)}
     ess_trans = Array.new(@N).map{ Array.new(3).map{ Array.new(state_cont.size - burn_in) } }
     
+    if !@signal_gain_branch[gn]
+      is_no_signal = true
+    else
+      is_no_signal = false
+    end
 
     (burn_in..state_cont.size-1).each do |itr|
       state_cont[itr].each_with_index do |state, num|
@@ -169,7 +177,11 @@ class InferHist
           if ess > 100
             str.push("-")
           else
-            str.push("NG")
+            if i > 0 && is_no_signal
+              str.push("na")
+            else
+              str.push("NG")
+            end
           end
         end
         output.print str.join(",")
@@ -869,13 +881,35 @@ class InferHist
     max = log(0)
     signal_gain_node = nil
     gene_gain_node   = @gain_branch[g]
+
+    # some cluster can be a cluster without or too few signal prediction.
+    #  I filter them at this step.
+    xg    = @pp.profiles[@pp.symbol2index[g]]
+    count = xg.inject(Hash.new(0)){|hash, a| hash[a] += 1; hash}
+    if count.key?(2)
+      if count[2] < 3
+        open(@log_file, "a"){|f|
+          f.flock(File::LOCK_EX)
+          f.puts "MAX log likelihood given gene gain node: NA for\t#{g}\ttoo few observation = #{count[2]}"
+        }
+        return [g, nil]
+      end
+    else
+      # no prediction case
+      open(@log_file, "a"){|f|
+        f.flock(File::LOCK_EX)
+        f.puts "MAX log likelihood given gene gain node: NA for\t#{g}\ttoo few observation = 0"
+      }
+      return [g, nil]
+    end
+
     #p @gain_branch[g]
     # tentatively, assume one gaining.
     # loop with all nodes.
     @pt.sorted_nodes.each do |node|
       #if gene_gain_node == node || @pt.tree.descendents(gene_gain_node, root=@pt.root).include?(node)
       if @pt.same_sub_tree[gene_gain_node][node]
-        prob = marginal_ML(g, @gain_branch[g], node, false)
+        prob = marginal_ML(g, @gain_branch[g], node, true)
         #STDERR.puts "DEBUG: #{g} #{prob} #{node.name} #{@gain_branch[g]==node} #{node==@pt.root}"
         if prob > max
           max = prob
@@ -909,8 +943,8 @@ class InferHist
     gg = @gain_branch[g]
     sg = @signal_gain_branch[g]
 
-    if !gg || !sg
-      STDERR.puts "Error: gene gain or/and signal gain have not been estimated."
+    if !gg
+      STDERR.puts "Error: gene gain has not been estimated."
       return
     end
 
@@ -1081,7 +1115,11 @@ class InferHist
       }
 
       n_index = @pt.sorted_nodes.index(gg)
-      s_index = @pt.sorted_nodes.index(sg)
+      if sg
+        s_index = @pt.sorted_nodes.index(sg)
+      else
+        s_index = -1
+      end
 
       @pt.sorted_nodes.each_with_index { |node, num|
         if num >= n_index
