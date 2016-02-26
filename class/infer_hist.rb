@@ -97,7 +97,7 @@ class InferHist
 
   # 2015/7/9
   # since sampling method was changed, output method has to be changed.
-  def pretty_output_process(total, burn_in, gn = gene_name, param_cont, state_cont)
+  def pretty_output_process(total, burn_in, gn = gene_name, param_cont, state_cont, param_dir)
     # memo: @state_cont[gene num][update][branch num]
     #       @param_cont[gene num][update][branch num]->[P10,P20,P21] in log
 
@@ -106,7 +106,7 @@ class InferHist
       return
     end
 
-    output = File.open("/home/yoshinori/MitoFates_MCMC/MitoFatesProb/parallel_param_files/TIM50/#{gn}.csv", "w")
+    output = File.open("#{param_dir}/#{gn}.csv", "w")
 
     smp_size = (total-burn_in).to_f
 
@@ -293,7 +293,7 @@ class InferHist
     end
   end
 
-  def mcmc(total, burn_in)
+  def mcmc(total, burn_in, param_dir)
 
     if total - burn_in < 0
       STDERR.puts "Error: burn in step is too large."
@@ -337,7 +337,7 @@ class InferHist
     else
       Parallel.map_with_index(@input_genes, in_processes: @ncore) do |gene, i|
       #@input_genes.each_with_index do |gene, i|
-        sampling_state_process(i, gene, r, total, burn_in)
+        sampling_state_process(i, gene, r, total, burn_in, param_dir)
         puts "#{gene} finish."
       end
     end
@@ -944,7 +944,7 @@ class InferHist
   # Since there is currently no reason to loop gene inside of mcmc step, move outside loop to the 
   #  inside of method to avoid troublesome memory management.
   # Kept previous method for future use.
-  def sampling_state_process(i = input_index, g = gene, r, total, burn_in)
+  def sampling_state_process(i = input_index, g = gene, r, total, burn_in, param_dir)
     gg = @gain_branch[g]
     sg = @signal_gain_branch[g]
 
@@ -1306,7 +1306,7 @@ class InferHist
       }
     end # end of mcmc sampling
 
-    pretty_output_process(total, burn_in, g, param_cont, state_cont)
+    pretty_output_process(total, burn_in, g, param_cont, state_cont, param_dir)
   end
 
   def sampling_state(i = input_index, g = gene, r = rng, it = itr)
