@@ -23,8 +23,7 @@ class InferHist
     @is_clade    = Array.new(@N).map{ Array.new(@N) }
     @null_m      = [
                     [log(1), log(0)],
-                    #[log(0.02), log(0.98)]
-                    [log(0.121), log(1-0.121)]
+                    [log(0.125), log(1-0.125)]
                    ]
     # below var contains sampled states at each node for each gene
     @hidden_samp = Array.new(input_genes.size).map{ Array.new(@N, nil) }
@@ -107,7 +106,7 @@ class InferHist
       return
     end
 
-    output = File.open("/home/yoshinori/MitoFates_MCMC/MitoFatesProb/parallel_param_files/HOGE/#{gn}.csv", "w")
+    output = File.open("/home/yoshinori/MitoFates_MCMC/MitoFatesProb/parallel_param_files/TIM50/#{gn}.csv", "w")
 
     smp_size = (total-burn_in).to_f
 
@@ -301,6 +300,11 @@ class InferHist
       return
     end
 
+    open(@log_file, "a"){|f|
+      f.flock(File::LOCK_EX)
+      f.puts "MCMC START WITH TOTAL = #{total} and BURN_IN = #{burn_in}"
+    }
+
     # to get more randomized number, declaration must be done outside of sampling method.
     r = GSL::Rng.alloc(GSL::Rng::MT19937, GSL::Rng.default_seed)
 
@@ -379,10 +383,11 @@ class InferHist
 
     ### 54 euk ###
     sg    = 0.01  # signal gain, mitochondrial
-    gl    = 0.121
+    gl    = 0.125
 
     if mts_flag
-      sl    = 0.175 # mts
+      #sl    = 0.175 # mts estimated from LECA group
+      sl    = 0.182 # mts re-estimated all clusters with sl=0.175
     else
       sl    = 0.158 # sp
     end
