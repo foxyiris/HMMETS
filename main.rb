@@ -191,8 +191,8 @@ class MakePhylogenyPDF < Prawn::Document
               stroke_color @stroke_color[3]
               state = 2
             else
-              if @bp[@gn][num][0] > 0.5
-                p10_hex = (255*@bp[@gn][num][0]).to_i.to_s(16)
+              if @bp[num][0] > 0.5
+                p10_hex = (255*@bp[num][0]).to_i.to_s(16)
                 p10_hex = p10_hex << "0000"
                 stroke_color p10_hex
                 state = 0
@@ -203,13 +203,13 @@ class MakePhylogenyPDF < Prawn::Document
             end
 
           elsif state_parent == 2
-            if @bp[@gn][num][1] > 0.33
-              p20_hex = (255*@bp[@gn][num][1]).to_i.to_s(16)
+            if @bp[num][1] > 0.33
+              p20_hex = (255*@bp[num][1]).to_i.to_s(16)
               p20_hex = p20_hex << "0000"
               stroke_color p20_hex
               state = 0
-            elsif @bp[@gn][num][2] > 0.33
-              p21_hex = (255*@bp[@gn][num][2]).to_i.to_s(16)
+            elsif @bp[num][2] > 0.33
+              p21_hex = (255*@bp[num][2]).to_i.to_s(16)
               p21_hex = "0000" << p21_hex
               stroke_color p21_hex
               state = 1
@@ -314,7 +314,7 @@ if __FILE__ == $0
   processor_count = Parallel.processor_count
   use_multicore = true
   if use_multicore
-    processor_count -= 2
+    processor_count -= 10
   end
 
   treeio = Bio::FlatFile.open(Bio::Newick, ARGV.shift)
@@ -330,6 +330,16 @@ if __FILE__ == $0
 
   pp.swap_rows(pt)
 
+=begin
+  if true
+    pt.sorted_nodes.each_with_index do |node, i|
+      anc_index = pt.node2num[pt.tree.parent(node, root=pt.root)]
+      puts "#{i} #{anc_index}"
+    end
+    exit 0
+  end
+=end
+
   # debug data
   #input_genes = ["DUMMY"]
   #input_genes = ["YDR079W"]
@@ -343,10 +353,12 @@ if __FILE__ == $0
   ih = InferHist.new(pt, pp, input_genes, processor_count)
   ih.pre_process()
 
-  #ih.mcmc(30000,3000)
-  ih.mcmc(10000, 3000)
+  total_step = 100000
+  burn_in    = 3000
 
-  exit 0
+  ih.mcmc(total_step, burn_in)
+  #ih.mcmc(100000, 3000)
+  #ih.mcmc(10, 4)
 
   input_genes.each do |gene|
     taxon2prof = Hash.new()
@@ -356,14 +368,62 @@ if __FILE__ == $0
         taxon2prof[leaf.name] = pp.profiles[pp.symbol2index[gene]][pp.taxon2index[name]]
       end
     end
+
+    hidden_states = Array.new(2*pt.n_s-1).map { Array.new(3,0) }
+    branch_params = Array.new(2*pt.n_s-1).map { Array.new(3,0) }
+
+    open("/home/yoshinori/MitoFates_MCMC/MitoFatesProb/parallel_param_files/TIM50/#{gene}.csv", "r"){|f|
+      is_read_state = false
+      f.each do |line|
+        if /-ESS/ =~ line
+          next
+        else
+          if is_read_state
+            # read branch params
+            line.chomp!
+            branches = line.split("\t")
+            branches.shift
+            branches.each_with_index do |prs, tax_i|
+              prs.split(", ").each_with_index do |pr, branch|
+                if pr == "-"
+                  branch_params[tax_i][branch] = 0
+                else
+                  branch_params[tax_i][branch] = pr.to_f
+                end
+              end
+            end
+
+          else
+            # read state
+            line.chomp!
+            states = line.split("\t")
+            states.shift
+            states.each_with_index do |prs, tax_i|
+              prs.split(", ").each_with_index do |pr, state|
+                if pr == "-"
+                  hidden_states[tax_i][state] = 0
+                else
+                  hidden_states[tax_i][state] = pr.to_f
+                end
+              end
+            end
+            is_read_state = true
+          end
+        end
+
+      end
+    }
   
-    mp = MakePhylogenyPDF.new(pt, gene, ih.gain_branch, ih.signal_gain_branch, ih.hidden_states, ih.branch_params, taxon2prof)
+    mp = MakePhylogenyPDF.new(pt, gene, ih.gain_branch, ih.signal_gain_branch, hidden_states, branch_params, taxon2prof)
 
     #mp.render_file("figs_yeast_primitive_mts/#{gene}.pdf")
     #mp.render_file("figs/#{gene}.pdf")
     #mp.render_file("figs_yeast_rbh/#{gene}.pdf")
     #mp.render_file("test/#{gene}.pdf")
-    mp.render_file("#{gene}.pdf")
+    #mp.render_file("figs_mts_leca_orthoMCL/#{gene}.pdf")
+    #mp.render_file("figs_ambiguous_orthoMCL/#{gene}.pdf")
+    mp.render_file("figs_interesting_history/#{gene}.pdf")
+    #mp.render_file("#{gene}.pdf")
   end
 
   exit 0
