@@ -28,23 +28,8 @@ class InferHist
     # below var contains sampled states at each node for each gene
     @hidden_samp = Array.new(input_genes.size).map{ Array.new(@N, nil) }
 
-    # parameters of prior for YGOB.
-    #@a   = 0.0045 # beta
-    #@b   = 0.1455 # beta
-    #@al1 = 0.003   # dirichlet
-    #@al2 = 0.005   # dirichlet
-    #@al3 = 0.100   # dirichlet
-
-    # parameters of prior for 54.
-    #@a   = 0.05 # beta
-    #@b   = 0.1 # beta
-    #@al1 = 0.05 # dirichlet
-    #@al2 = 0.05 # dirichlet
-    #@al3 = 0.05 # dirichlet
-
     # 2016/4/20
-    # set hyper parammeter like below from MTS-ALL.
-    # MLE estimate returns high value, so omit this way. (prior effect seems to be too strong)
+    # set hyper parammeter from MTS-ALL.
     @a   = 0.0328 # beta, a=al1
     @b   = 0.2384 # beta, al2+al3
     @al1 = 0.0328 # dirichlet
@@ -103,8 +88,6 @@ class InferHist
     end
   end
 
-  # 2015/7/9
-  # since sampling method was changed, output method has to be changed.
   def pretty_output_process(total, burn_in, gn = gene_name, param_cont, state_cont, param_dir, conts)
     # memo: @state_cont[gene num][update][branch num]
     #       @param_cont[gene num][update][branch num]->[P10,P20,P21] in log
@@ -480,9 +463,6 @@ class InferHist
   def calc_log_Xg_branch(g = gene, n = node, t_i, hidden_samp_i)
     out_of_clade = 0
 
-    # memo for me-> Ruby assings same reference with such declarations:
-    #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
-    #   Confirm not to declare with above style in ruby when using multi-D array.
     log_prob_from_leaves = Array.new(@N).map{ Array.new(2).map{ Array.new(2, 0) }}
     log_prob_near_leaves = Array.new(@N).map{ Array.new(2,0) }
     log_prob             = Array.new(@N).map{ Array.new(2,0) }
@@ -554,9 +534,6 @@ class InferHist
   # 2016/2/26
   def calc_log_Xg_sg_branch(g = gene, gn = g_gain_node, sn = s_gain_node, mts_flag, t_i, hidden_samp)
 
-    # memo for me-> Ruby assings same reference with such declarations:
-    #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
-    #   Confirm not to declare with above style in ruby when using multi-D array.
     log_prob_from_leaves = Array.new(@N).map{ Array.new(2).map{ Array.new(3, 0) }}
     log_prob_near_leaves = Array.new(@N).map{ Array.new(3,0) }
     log_prob             = Array.new(@N).map{ Array.new(3,0) }
@@ -566,22 +543,6 @@ class InferHist
 
     # flag for if signal gain node is as same as the gene gain node?
     is_sn_gn_same = false
-
-    ### YGOB MTS ###
-    #sg    = 0.0072 # signal gain, global
-    #sg    = 0.0830 # signal gain, mts annotated
-    #sl    = 0.07554 # signal loss, global
-    #sl    = 0.05692 # signal loss, mts annotated
-    #gl    = 0.02    # gene loss
-
-    ### YGOB SP ###
-    #sg    = 0.00203 # signal gain, global
-    #sg    = 0.10143 # signal gain, sp annotated
-    #sl    = 0.05251 # signal loss, global
-    #sl    = 0.04116 # signal loss, SP annotated
-    #gl    = 0.02184 # gene loss, global
-    #gl    = 0.03241 # gene loss
-
 
     ### 54 euk ###
     sg    = 0.01  # signal gain, mitochondrial
@@ -636,14 +597,6 @@ class InferHist
       end
     }
 
-    # 2015/4/13
-    # we have to take out of signal gain branch into our account when thinking signal gain. 
-    #n_index = @pt.sorted_nodes.index(sn)
-
-    # plus, I set an assumption signal gain event occurs only once under gene gain tentatively.
-    # to treat this, we cannot use global P12 = 0 anymore, but set P12 = something "when child is sn".
-    # in case of gn == sn, think of short branch within gn. we can think transition P11 or P12 along this branch.
-    # otherwise, sn = gn bias exist due to low P12 prob.
     n_index = @pt.sorted_nodes.index(gn)
     @pt.sorted_nodes.each_with_index { |node, num|
       if num >= n_index
@@ -698,9 +651,6 @@ class InferHist
     end
   end # end of method
 
-  # 2016/2/25
-  # gain node is initially determined, so distribution of gain node is not obtained.
-  # calc this with each step to get dist.
   def sampling_state_process_gain_post(i = input_index, g = gene, r, total, burn_in, param_dir)
     gg1 = @gain_branch[g]
     sg1 = @signal_gain_branch[g]
@@ -742,19 +692,10 @@ class InferHist
       }
     }
 
-    ### YGOB ###
-    #sg    = 0.0072 # signal gain, global
-    #sg    = 0.0830 # signal gain, mts annotated
-    #sl    = 0.07554 # signal loss, global
-    #sl    = 0.05692 # signal loss, mts annotated
-    #gl    = 0.02    # gene loss
-
     ### 54 euk ###
     # initial value. Tentatively, use uniform dist for three states
     sl    = 0.182
     gl    = 0.125
-    #sl    = 0.33
-    #gl    = 0.33
 
     ### Error rate ###
     eps   = 0.01
@@ -774,9 +715,6 @@ class InferHist
 
     # begin of gibbs sampling
     (0..total-1).each do |it|
-      # memo for me-> Ruby assings same reference with such declarations:
-      #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
-      #   Confirm not to declare with above style in ruby when using multi-D array.
       log_prob_from_leaves     = Array.new(@N).map{ Array.new(2).map{ Array.new(3, 0) }}
       log_prob_near_leaves     = Array.new(@N).map{ Array.new(3,0) }
       log_prob                 = Array.new(@N).map{ Array.new(3,0) }
@@ -814,11 +752,6 @@ class InferHist
             break
           end
 
-          # 2016/3/1
-          # remove "next" operation for taxons out of gg.
-          # this is ok if gg is set to ancestral node with conservative parameters like \tilde{theta}.
-          # however, this violates updateing of gg. if gg moves to some daughter node, that is trapped.
-          #if !@pt.same_sub_tree[gg][node] || node == gg
           if node == gg
             next
           else
@@ -843,70 +776,10 @@ class InferHist
             t_mat[it][num][2][1] = log(theta_mts[1])
             t_mat[it][num][2][2] = log(theta_mts[2])
 
-            #t_mat[num][2][0] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
-            #t_mat[num][2][1] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
-            #t_mat[num][2][2] = log(1 - exp(t_mat[num][2][0]) - exp(t_mat[num][2][1]))
-
             param_cont[it][num][0] = t_mat[it][num][1][0]
             param_cont[it][num][1] = t_mat[it][num][2][0]
             param_cont[it][num][2] = t_mat[it][num][2][1]
 
-=begin
-            if !@pt.same_sub_tree[sg][node]
-              # non-mts region
-              count = Array.new(2).map{ [0,0] }
-              anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
-
-              a = hidden_samp[it-1][anc_index] > 0 ? 1 : 0
-              b = hidden_samp[it-1][num] > 0 ? 1 : 0
-              count[a][b] += 1
-
-              # sampling from beta
-              theta_non = r.beta(@a+count[1][0], @b+count[1][1])
-
-              t_mat[it][num][0][0] = 0
-              t_mat[it][num][1][0] = log(theta_non)
-              t_mat[it][num][1][1] = log(1 - theta_non)
-              t_mat[it][num][1][2] = log(0)
-              t_mat[it][num][2][0] = log(0)
-              t_mat[it][num][2][1] = log(0)
-              t_mat[it][num][2][2] = log(0)
-
-              param_cont[it][num][0] = t_mat[it][num][1][0]
-              param_cont[it][num][1] = t_mat[it][num][2][0]
-              param_cont[it][num][2] = t_mat[it][num][2][1]
-
-            else
-              # mts region
-              count = Array.new(3).map{ Array.new(3,0) }
-              anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
-
-              count[hidden_samp[it-1][anc_index]][hidden_samp[it-1][num]] += 1
-
-              # sampling from beta
-              theta_non = r.beta(@a+count[1][0], @b+count[1][1])
-              # sampling from dirichlet
-              obs = GSL::Vector.alloc(@al1+count[2][0],@al2+count[2][1], @al3+count[2][2])
-              theta_mts = r.dirichlet(obs).to_a
-
-              t_mat[it][num][0][0] = 0
-              t_mat[it][num][1][0] = log(theta_non)
-              t_mat[it][num][1][1] = log(1 - theta_non)
-              t_mat[it][num][1][2] = log(0)
-              t_mat[it][num][2][0] = log(theta_mts[0])
-              t_mat[it][num][2][1] = log(theta_mts[1])
-              t_mat[it][num][2][2] = log(theta_mts[2])
-
-              #t_mat[num][2][0] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
-              #t_mat[num][2][1] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
-              #t_mat[num][2][2] = log(1 - exp(t_mat[num][2][0]) - exp(t_mat[num][2][1]))
-
-              param_cont[it][num][0] = t_mat[it][num][1][0]
-              param_cont[it][num][1] = t_mat[it][num][2][0]
-              param_cont[it][num][2] = t_mat[it][num][2][1]
-
-            end
-=end
           end
         } # end of each
 
@@ -1121,31 +994,7 @@ class InferHist
         log_prob_near_leaves[num][state] = 0
       }
 
-      # 2016/4/20
-      # to reduce comp time, change not to calc posterior dist of gain. estimate MLE with initial param.
       gg_cont[it] = gg1
-
-=begin
-      # compute gene gain node with sampled results
-      max_i = log(0)
-      gain_node = nil
-
-      # tentatively, assume one gaining.
-      # loop with all nodes.
-      @pt.sorted_nodes.each do |node|
-        prob = calc_log_Xg_branch(g, node, t_mat[it], hidden_samp[it])
-        #STDERR.puts "DEBUG: #{g} #{prob}"
-        if prob > max_i
-          max_i = prob
-          gain_node = node
-        end
-      end
-    
-      gg_cont[it] = gain_node
-=end
-
-      # 2016/4/20
-      # OMG, this is not sampling...
 
       # compute signal gain node with sampled results
       max_sg_i = log(0)
@@ -1189,38 +1038,11 @@ class InferHist
       signal_gain_node = @pt.sorted_nodes[c_k]
       sg_cont[it] = signal_gain_node
 
-=begin
-      # compute signal gain node with sampled results
-      max_sg_i = log(0)
-      signal_gain_node = nil
-
-      #p @gain_branch[g]
-      # tentatively, assume one gaining.
-      # loop with all nodes.
-      @pt.sorted_nodes.each do |node|
-        if @pt.same_sub_tree[gain_node][node]
-          prob =  calc_log_Xg_sg_branch(g, gain_node, node, true, t_mat[it], hidden_samp[it])
-          #STDERR.puts "DEBUG: #{g} #{prob} #{node.name} #{@gain_branch[g]==node} #{node==@pt.root}"
-          if prob > max_sg_i
-            max_sg_i = prob
-            signal_gain_node = node
-          end
-        end
-      end
-      sg_cont[it] = signal_gain_node
-=end
-
     end # end of mcmc sampling
 
     pretty_output_process(total, burn_in, g, param_cont, state_cont, param_dir, [gg_cont, sg_cont])
   end
 
-
-  # 2015/7/9
-  # to parallelize sampling method, memory management is a source of headach.
-  # Since there is currently no reason to loop gene inside of mcmc step, move outside loop to the 
-  #  inside of method to avoid troublesome memory management.
-  # Kept previous method for future use.
   def sampling_state_process(i = input_index, g = gene, r, total, burn_in, param_dir)
     gg = @gain_branch[g]
     sg = @signal_gain_branch[g]
@@ -1259,17 +1081,8 @@ class InferHist
       }
     }
 
-    ### YGOB ###
-    #sg    = 0.0072 # signal gain, global
-    #sg    = 0.0830 # signal gain, mts annotated
-    #sl    = 0.07554 # signal loss, global
-    #sl    = 0.05692 # signal loss, mts annotated
-    #gl    = 0.02    # gene loss
-
     ### 54 euk ###
     # initial value. Tentatively, use uniform dist for three states
-    #sl    = 0.097
-    #gl    = 0.175
     sl    = 0.33
     gl    = 0.33
 
@@ -1291,9 +1104,6 @@ class InferHist
 
     # begin of gibbs sampling
     (0..total-1).each do |it|
-      # memo for me-> Ruby assings same reference with such declarations:
-      #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
-      #   Confirm not to declare with above style in ruby when using multi-D array.
       log_prob_from_leaves     = Array.new(@N).map{ Array.new(2).map{ Array.new(3, 0) }}
       log_prob_near_leaves     = Array.new(@N).map{ Array.new(3,0) }
       log_prob                 = Array.new(@N).map{ Array.new(3,0) }
@@ -1362,10 +1172,6 @@ class InferHist
               t_mat[it][num][2][0] = log(theta_mts[0])
               t_mat[it][num][2][1] = log(theta_mts[1])
               t_mat[it][num][2][2] = log(theta_mts[2])
-
-              #t_mat[num][2][0] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
-              #t_mat[num][2][1] = log((@al2+count[2][1])/(@al1+@al2+@al3+count[2][0]+count[2][1]+count[2][2]))
-              #t_mat[num][2][2] = log(1 - exp(t_mat[num][2][0]) - exp(t_mat[num][2][1]))
 
               param_cont[it][num][0] = t_mat[it][num][1][0]
               param_cont[it][num][1] = t_mat[it][num][2][0]
@@ -1595,9 +1401,6 @@ class InferHist
       return
     end
 
-    # memo for me-> Ruby assings same reference with such declarations:
-    #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
-    #   Confirm not to declare with above style in ruby when using multi-D array.
     log_prob_from_leaves     = Array.new(@N).map{ Array.new(2).map{ Array.new(3, 0) }}
     log_prob_near_leaves     = Array.new(@N).map{ Array.new(3,0) }
     log_prob                 = Array.new(@N).map{ Array.new(3,0) }
@@ -1611,16 +1414,7 @@ class InferHist
               }
             }
 
-    ### YGOB ###
-    #sg    = 0.0072 # signal gain, global
-    #sg    = 0.0830 # signal gain, mts annotated
-    #sl    = 0.07554 # signal loss, global
-    #sl    = 0.05692 # signal loss, mts annotated
-    #gl    = 0.02    # gene loss
-
     ### 54 euk ###
-    #sl    = 0.097
-    #gl    = 0.175
     sl    = 0.333
     gl    = 0.333
 
@@ -1921,9 +1715,6 @@ class InferHist
 
     out_of_clade = 0
 
-    # memo for me-> Ruby assings same reference with such declarations:
-    #   Array.new(N, Array.new(K,0)). In this case, N arrays have the same reference.
-    #   Confirm not to declare with above style in ruby when using multi-D array.
     log_prob_from_leaves = Array.new(@N).map{ Array.new(2).map{ Array.new(2, 0) }}
     log_prob_near_leaves = Array.new(@N).map{ Array.new(2,0) }
     log_prob             = Array.new(@N).map{ Array.new(2,0) }
@@ -1973,15 +1764,6 @@ class InferHist
                                                                         @null_m[1][0]+log_prob[num][0],
                                                                         @null_m[1][1]+log_prob[num][1])
 
-      #log_prob_from_leaves[anc_index][chd_index][0] = Utils.log_sum_exp(
-      #                                                                  @null_m[0][0]+log_prob[num][0],
-      #                                                                  @null_m[0][1]+log_prob[num][1], false)
-
-      #log_prob_from_leaves[anc_index][chd_index][1] = Utils.log_sum_exp(
-      #                                                                  @null_m[1][0]+log_prob[num][0],
-      #                                                                  @null_m[1][1]+log_prob[num][1], false)
-
-
     }
 
 
@@ -2025,19 +1807,8 @@ class InferHist
 
 
   private
-  # put some legacy methods here.
+  # put some methods here.
 
-  # 2015/3/10
-  # I faced a problem to estimate parameters of null probs, namely P01 and P10 (1=MTS, 0=Non-MTS)
-  # Above null model apperantly has no objective reasoning (P10=0.03 and P01=0).
-  # To avoid theoretical problems, I have to start some principle based method like maximum parsimony to get some flavor.
-  # (No experimental or statistical report to argue P01 and P10, so I have to start from the beginning.)
-  # To calculate fast, DP is applied with a global cost matrix Transition (01 and 10) has 1 otherwise 0.
-  # If an ancestral node has equal cost for both states, what should I do? At present, count up both with half weight, namely 0.5.
-
-  # 2015/3/11
-  # With a condition without any gene loss in 20 yeast speacies, P01=0.00759 and P10=0.0711
-  # Since MitoFates's fn rate is a bit high, so P10 might be overestimated, but anyway this is a start line.
   def maximum_parsimony(g = gene)
     # without gene loss model
     #cost_m = [
@@ -2045,16 +1816,16 @@ class InferHist
     #          [1,0]]
 
     # considering gene loss model but assume no regaining of a gene
-    cost_m = [
-              [0,MAX,MAX],
-              [1,0,1],
-              [1,1,0]]
-
-    # considering gene loss model without any assumption
     #cost_m = [
-    #          [0,1,1],
+    #          [0,MAX,MAX],
     #          [1,0,1],
     #          [1,1,0]]
+
+    # considering gene loss model without any assumption
+    cost_m = [
+              [0,1,1],
+              [1,0,1],
+              [1,1,0]]
 
     # counter for transition event
     counter = Array.new(3).map{ Array.new(3,0) }
@@ -2170,12 +1941,6 @@ class InferHist
     
   end
 
-  # 2015/4/13
-  # I realized theoretical problem treating out of sg clade when calc signal gain branch.
-  # start to fix it.
-
-  # 2015/4/15
-  # Added a missing data state, 3, either non-MTS or MTS.
   def marginal_ML(g = gene, gn = g_gain_node, sn = s_gain_node, mts_flag)
 
     # memo for me-> Ruby assings same reference with such declarations:
@@ -2190,22 +1955,6 @@ class InferHist
 
     # flag for if signal gain node is as same as the gene gain node?
     is_sn_gn_same = false
-
-    ### YGOB MTS ###
-    #sg    = 0.0072 # signal gain, global
-    #sg    = 0.0830 # signal gain, mts annotated
-    #sl    = 0.07554 # signal loss, global
-    #sl    = 0.05692 # signal loss, mts annotated
-    #gl    = 0.02    # gene loss
-
-    ### YGOB SP ###
-    #sg    = 0.00203 # signal gain, global
-    #sg    = 0.10143 # signal gain, sp annotated
-    #sl    = 0.05251 # signal loss, global
-    #sl    = 0.04116 # signal loss, SP annotated
-    #gl    = 0.02184 # gene loss, global
-    #gl    = 0.03241 # gene loss
-
 
     ### 54 euk ###
     sg    = 0.01  # signal gain, mitochondrial
@@ -2260,13 +2009,6 @@ class InferHist
           out_of_gg_clade += prob_pred_error[0][state]
         end
         next
-      #else
-      # 2015/4/13
-      # below part is a souce of theoretical error. out of sg clade, there are two putative states. not only 1.
-      #  if !@pt.same_sub_tree[sn][node]
-      #    out_of_sg_clade += prob_pred_error[1][state]
-      #    next
-      #  end
       end
 
       if state != 3
@@ -2280,14 +2022,6 @@ class InferHist
       end
     }
 
-    # 2015/4/13
-    # we have to take out of signal gain branch into our account when thinking signal gain. 
-    #n_index = @pt.sorted_nodes.index(sn)
-
-    # plus, I set an assumption signal gain event occurs only once under gene gain tentatively.
-    # to treat this, we cannot use global P12 = 0 anymore, but set P12 = something "when child is sn".
-    # in case of gn == sn, think of short branch within gn. we can think transition P11 or P12 along this branch.
-    # otherwise, sn = gn bias exist due to low P12 prob.
     n_index = @pt.sorted_nodes.index(gn)
     @pt.sorted_nodes.each_with_index { |node, num|
       if num >= n_index
@@ -2340,18 +2074,6 @@ class InferHist
     end
   end # end of method
 
-  # 2015/3/12 Pupko 2000
-  # In the field of ancestral reconstruction, below maximum parsimony method is nowdays old-fashioned.
-  # I try to reconstruct ancestor state of signal with ML and transition parameter determined by below function.
-  # But problem is that we still ignore branch specific transition or length, so bayesian way should be an appropriate.
-  # In this case, reconstruction has to be done with many matrices, so this method cannot be applied to the model.
-  # In such a case, Pupko 2002 method should be better in terms of assumption and its speed with their approximation.
-
-  # 2015/3/13
-  # I realized joint ML method cannot work with the transition matix with initial assumption.
-  # Since t00 is too huge, namely 1, root is likely to be 0 and descendents are also likely to be 0 due to the prob.
-  # As a result, even though I gave a transition matrix, this violates observation.
-  # maybe this is why CLIME assumes one gaining and it doesn't condider L(0) to pick up gain branch. (it is easy L(0) > L(1), and max will be 0) 
   def joint_ML(g=gene)
 
     # considering gene loss model but assume no regaining of a gene
@@ -2418,18 +2140,8 @@ class InferHist
         most_likel_state_vec[num][state] = max_state
       end
 
-      #likel_vec[num][0] = prob_pred_error[0][state_at_leaf]
-      #likel_vec[num][1] = prob_pred_error[1][state_at_leaf]
-      #likel_vec[num][2] = prob_pred_error[2][state_at_leaf]
-
       anc_index = @pt.node2num[@pt.tree.parent(node, root=@pt.root)]
       chd_index = @pt.which_child[node]
-
-      # state at leaf is always observation after all even we take prob error into account.
-      # max_i P(H_{g,leaf}=i}|Xg,s) = observation state
-      #most_likel_state_vec[num][0] = [state_at_leaf]
-      #most_likel_state_vec[num][1] = [state_at_leaf]
-      #most_likel_state_vec[num][2] = [state_at_leaf]
 
       likel_vec_from_leaves[anc_index][chd_index][0] = likel_vec[num][0]
       likel_vec_from_leaves[anc_index][chd_index][1] = likel_vec[num][1]
