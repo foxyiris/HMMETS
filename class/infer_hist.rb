@@ -14,7 +14,7 @@ class InferHist
   MAX     = 1e50
 
   def initialize(pt = phylo_tree, pp = phylo_profile, input_genes, ncore)
-    @log_file    = "/home/yoshinori/MitoFates_MCMC/MitoFatesProb/log_" << Date::today.to_s << ".txt"
+    @log_file    = "#{Dir::getwd}/log_" << Date::today.to_s << ".txt"
     @pt          = pt
     @pp          = pp
     @N           = 2*@pt.n_s-1
