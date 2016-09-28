@@ -10,6 +10,14 @@ At present, we applied this for estimation of presequence evolution with MitoFat
 This projects is coded in ruby, so you don't need to compile.
 Download and enjoy!
 Check Gemfile for dependency.
+
+Dependency:
+1. bioruby
+2. prawn
+3. GSL (required ruby binding)
+4. RubyInline
+5. parallel
+
 ## Usage
 Writing
 ## Contributing
