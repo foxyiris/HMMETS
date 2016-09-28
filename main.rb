@@ -1,3 +1,4 @@
+require 'fileutils'
 require 'bundler'
 require_relative './class/utils.rb'
 require_relative './class/phylo_prof.rb'
@@ -16,6 +17,11 @@ if __FILE__ == $0
   end
 
   model_file_path = "/home/yoshinori/HMMETS/models/"
+
+  if !Dir.exists?(model_file_path)
+    STDERR.puts "Error: #{model_file_path} doesn't exits. Make it."
+    FileUtils.mkdir_p(model_file_path)
+  end
 
   treeio = Bio::FlatFile.open(Bio::Newick, ARGV.shift)
   pp     = PhyloProf.new(ARGV.shift)
