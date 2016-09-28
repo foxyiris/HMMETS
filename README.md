@@ -1,4 +1,4 @@
-# ${1:HMMETS}
+# HMMETS
 HMM for Evolution of Targeting Signal (HMMETS) is an estimation algorithm for targeting signal of proteins.
 Basic idea came from phylogenetic profiling for gene gain/loss, and we expanded this to targeting signal.
 One motivation of this algorithm is finding widely conserved targeting signal in a gene cluster.
