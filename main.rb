@@ -7,6 +7,7 @@ Bundler.require
 
 # main 
 if __FILE__ == $0
+#git
   use_multicore = true
   if use_multicore
     processor_count = Parallel.processor_count
