@@ -58,6 +58,7 @@ class PhyloProf
         end
 
         j = @taxon2index[node.name.gsub(' ', '_').to_s]
+
         if array[j] == "0"
           temp[i] = 0
         elsif array[j] == '1'
