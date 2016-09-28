@@ -243,13 +243,15 @@ class MakePhylogenyPDF < Prawn::Document
 
         stroke_color @base_stroke_color
 
-        draw_text "#{@pt.node2num[r]}", :at => [@node_pos[r][0],@node_pos[r][1]-@taxon_font_size/2], :size => @taxon_font_size
+        # draw internal node id
+        #draw_text "#{@pt.node2num[r]}", :at => [@node_pos[r][0],@node_pos[r][1]-@taxon_font_size/2], :size => @taxon_font_size
 
       end
 
     else
-      draw_text "#{@pt.node2num[r]}", :at => [@node_pos[r][0]-@taxon_font_size*2, @node_pos[r][1]-@taxon_font_size/2], :size => @taxon_font_size
-      draw_text r.name, :at => [@node_pos[r][0],@node_pos[r][1]-@taxon_font_size/2], :size => @taxon_font_size
+      # draw terminal node id
+      #draw_text "#{@pt.node2num[r]}", :at => [@node_pos[r][0]-@taxon_font_size*2, @node_pos[r][1]-@taxon_font_size/2], :size => @taxon_font_size
+      draw_text r.name, :at => [@node_pos[r][0]+10,@node_pos[r][1]-@taxon_font_size/2], :size => @taxon_font_size
     end
 
   end
@@ -303,6 +305,7 @@ end
 
 treeio = Bio::FlatFile.open(Bio::Newick, ARGV.shift)
 pp     = PhyloProf.new(ARGV.shift)
+outdir = ARGV.shift
 pt     = nil
 
 if newick = treeio.next_entry
@@ -313,6 +316,8 @@ if newick = treeio.next_entry
 end
 
 pp.swap_rows(pt)
+
+input_genes = pp.symbol2index.keys
 
 input_genes.each do |gene|
   taxon2prof = Hash.new()
@@ -326,10 +331,12 @@ input_genes.each do |gene|
   hidden_states = Array.new(2*pt.n_s-1).map { Array.new(3,0) }
   branch_params = Array.new(2*pt.n_s-1).map { Array.new(3,0) }
 
-  open("/home/yoshinori/MitoFates_MCMC/MitoFatesProb/parallel_param_files/TIM50/#{gene}.csv", "r"){|f|
+  open("#{outdir}/#{gene}.csv", "r"){|f|
     is_read_state = false
     f.each do |line|
       if /-ESS/ =~ line
+        next
+      elsif /Matryoshka/ !~ line
         next
       else
         if is_read_state
@@ -367,7 +374,7 @@ input_genes.each do |gene|
     end
   }
 
-  mp = MakePhylogenyPDF.new(pt, gene, ih.gain_branch, ih.signal_gain_branch, hidden_states, branch_params, taxon2prof)
+  mp = MakePhylogenyPDF.new(pt, gene, {"#{gene}" => pt.num2node[106]}, {"#{gene}" => pt.num2node[106]}, hidden_states, branch_params, taxon2prof)
 
   #mp.render_file("figs_yeast_primitive_mts/#{gene}.pdf")
   #mp.render_file("figs/#{gene}.pdf")
@@ -375,7 +382,7 @@ input_genes.each do |gene|
   #mp.render_file("test/#{gene}.pdf")
   #mp.render_file("figs_mts_leca_orthoMCL/#{gene}.pdf")
   #mp.render_file("figs_ambiguous_orthoMCL/#{gene}.pdf")
-  mp.render_file("figs_interesting_history/#{gene}.pdf")
+  mp.render_file("figs_post_sg/#{gene}.pdf")
   #mp.render_file("#{gene}.pdf")
 
 end # end of gene loop
