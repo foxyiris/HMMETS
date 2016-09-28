@@ -14,6 +14,7 @@ class PhyloTree
     # sorted_nodes contains leaves nodes first, then pushing ancestral nodes
     @sorted_nodes  = Array.new(0)
     @node2num      = Hash.new()
+    @num2node      = Hash.new()
     @which_child   = Hash.new()
     @same_sub_tree = Hash.new {|h,k| h[k] = Hash.new(nil) }
     @tree          = tree
