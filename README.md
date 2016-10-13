@@ -8,19 +8,30 @@ Assuming there is no re-entrant into feature space of targeting signal from outs
 At present, we applied this for estimation of presequence evolution with MitoFates program.  
 ## Installation
 This project is coded in ruby (partly in C), so you don't need to compile.
-Download and enjoy!
+Download and enjoy!  
 Check Gemfile for dependency.
 
-Dependency:
+Dependency:  
 1. bioruby  
 2. GSL (required ruby binding)  
 3. RubyInline  
 4. parallel  
 5. prawn (optional)
 
+## Setting
+Before starting you need to change some default values.  
+In main.rb:  
+	model_file_path  
+	total_step  
+	burn_in  
+In addition, you may need to change output dir of log file.  
+In class/infer_hist.rb:  
+	@log_file (in the initialize constructor)  
+
 ## Usage
 
-
+ruby main.rb tree_file(newick formar) phylogenetic_profile(CLIME format)  
+e.g. ruby main.rb tree.nwk ./toydata/Tim50_revised.csv  
 
 ## Contributing
 1. Fork it!

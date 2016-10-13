@@ -16,7 +16,7 @@ if __FILE__ == $0
     processor_count = 1
   end
 
-  model_file_path = "/home/yoshinori/PhyloFates/models/"
+  model_file_path = "/path2yourworkingdir/models/"
 
   if !Dir.exists?(model_file_path)
     STDERR.puts "Error: #{model_file_path} doesn't exits. Make it."
