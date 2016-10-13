@@ -303,9 +303,10 @@ end
 
 ######## main ##########
 
-treeio = Bio::FlatFile.open(Bio::Newick, ARGV.shift)
-pp     = PhyloProf.new(ARGV.shift)
-outdir = ARGV.shift
+treeio     = Bio::FlatFile.open(Bio::Newick, ARGV.shift)
+pp         = PhyloProf.new(ARGV.shift)
+outdir     = ARGV.shift
+output_dir = ARGV.shift
 pt     = nil
 
 if newick = treeio.next_entry
@@ -376,13 +377,6 @@ input_genes.each do |gene|
 
   mp = MakePhylogenyPDF.new(pt, gene, {"#{gene}" => pt.num2node[106]}, {"#{gene}" => pt.num2node[106]}, hidden_states, branch_params, taxon2prof)
 
-  #mp.render_file("figs_yeast_primitive_mts/#{gene}.pdf")
-  #mp.render_file("figs/#{gene}.pdf")
-  #mp.render_file("figs_yeast_rbh/#{gene}.pdf")
-  #mp.render_file("test/#{gene}.pdf")
-  #mp.render_file("figs_mts_leca_orthoMCL/#{gene}.pdf")
-  #mp.render_file("figs_ambiguous_orthoMCL/#{gene}.pdf")
-  mp.render_file("figs_post_sg/#{gene}.pdf")
-  #mp.render_file("#{gene}.pdf")
+  mp.render_file("#{output_dir}/#{gene}.pdf")
 
 end # end of gene loop
