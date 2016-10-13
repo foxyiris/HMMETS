@@ -6,8 +6,8 @@ Concept of homology is hard to be applied in this task, since targeting signal i
 However, targeting signal of orthologs is basically conserved, inferring conservation not in primary sequence but in feature space.  
 Assuming there is no re-entrant into feature space of targeting signal from outside, we can simply model evolution of targeting signal with some prediction algotirhms.  
 At present, we applied PhyloFates for estimation of presequence evolution with [MitoFates](http://mitf.cbrc.jp/MitoFates) program.  
-PhyloFates is not restricted in MitoFates, and arbitrary discrete feature is applicable.  
-When you are interested in another application with different system, contact me freely. Let's collaborate.
+PhyloFates is not restricted to MitoFates, and an arbitrary discrete feature is applicable.  
+When you are interested in another application with a different system, contact me freely. Let's collaborate.
 ## Installation
 This project is coded in ruby (partly in C), so you don't need to compile.
 Download and enjoy!  
@@ -43,7 +43,7 @@ e.g. ruby main.rb tree.nwk ./toydata/Tim50_revised.csv
 When you need a graphical representation, draw_profile script is useful.  
 model_dir is a directory for output of main.rb.  
 ruby draw_profile.rb tree_file(newick format) phylogenetic_profile(CLIME format) model_dir output_dir  
-e.g. e.g. ruby main.rb tree.nwk ./toydata/Tim50_revised.csv ./models/ ./pdfs/
+e.g. ruby main.rb tree.nwk ./toydata/Tim50_revised.csv ./models/ ./pdfs/
 
 ## Contributing
 1. Fork it!
