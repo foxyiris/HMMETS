@@ -1,11 +1,11 @@
 # PhyloFates
 PhyloFates is an estimation algorithm for evolution of protein targeting signal.  
-Basic idea came from phylogenetic profiling for gene gain/loss, and we expanded this to targeting signal.  
-One motivation of this algorithm is finding widely conserved targeting signal in a gene cluster.  
-Concept of Homology is hard to be applied in this task, since targeting signal is usually not conserved in a promary structure level.  
+Basic idea came from [CLIME](http://gene-clime.org/) using phylogenetic profiling for gene gain/loss, and we expanded this to targeting signal.
+One motivation of this algorithm is automatic detection of widely conserved targeting signal from numerous gene clusters.  
+Concept of homology is hard to be applied in this task, since targeting signal is usually not conserved in a promary structure level. 
 However, targeting signal of orthologs is basically conserved, inferring conservation not in primary sequence but in feature space.  
 Assuming there is no re-entrant into feature space of targeting signal from outside, we can simply model evolution of targeting signal with some prediction algotirhms.  
-At present, we applied this for estimation of presequence evolution with MitoFates program.  
+At present, we applied this for estimation of presequence evolution with [MitoFates](http://mitf.cbrc.jp/MitoFates) program.  
 ## Installation
 This project is coded in ruby (partly in C), so you don't need to compile.
 Download and enjoy!  
