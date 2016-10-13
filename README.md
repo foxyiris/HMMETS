@@ -21,12 +21,17 @@ Dependency:
 ## Setting
 Before starting you need to change some default values.  
 In main.rb:  
-	model_file_path  
-	total_step  
-	burn_in  
+```
+	model_file_path=  
+	total_step=  
+	burn_in=  
+```
 In addition, you may need to change output dir of log file.  
 In class/infer_hist.rb:  
-	@log_file (in the initialize constructor)  
+```
+        #in the initialize constructor)
+	@log_file=   
+```
 
 ## Usage
 
