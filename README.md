@@ -29,7 +29,7 @@ In main.rb:
 In addition, you may need to change output dir of log file.  
 In class/infer_hist.rb:  
 ```
-        #in the initialize constructor)
+	#in the initialize constructor
 	@log_file=   
 ```
 
