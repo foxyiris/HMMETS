@@ -35,8 +35,13 @@ In class/infer_hist.rb:
 
 ## Usage
 
-ruby main.rb tree_file(newick formar) phylogenetic_profile(CLIME format)  
+ruby main.rb tree_file(newick format) phylogenetic_profile(CLIME format)  
 e.g. ruby main.rb tree.nwk ./toydata/Tim50_revised.csv  
+
+When you need a graphical representation, draw_profile script is useful.  
+model_dir is a directory for output of main.rb.  
+ruby draw_profile.rb tree_file(newick format) phylogenetic_profile(CLIME format) model_dir output_dir  
+e.g. e.g. ruby main.rb tree.nwk ./toydata/Tim50_revised.csv ./models/ ./pdfs/
 
 ## Contributing
 1. Fork it!
